@@ -6,6 +6,7 @@ defmodule Errata.MixProject do
       app: :errata,
       version: "0.1.0",
       elixir: "~> 1.13",
+      consolidate_protocols: Mix.env() != :test,
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
@@ -21,6 +22,7 @@ defmodule Errata.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:jason, ">= 1.3.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false}
