@@ -1,14 +1,26 @@
 defmodule Errata.MixProject do
   use Mix.Project
 
+  @version "0.1.0"
+  @source_url "https://github.com/jvoegele/errata"
+
   def project do
     [
       app: :errata,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.13",
       consolidate_protocols: Mix.env() != :test,
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+
+      # Hex
+      description: "Elixir library for structured error handling",
+      package: package(),
+
+      # Docs
+      name: "Errata",
+      source_url: @source_url,
+      docs: docs()
     ]
   end
 
@@ -26,6 +38,26 @@ defmodule Errata.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false}
+    ]
+  end
+
+  defp package do
+    [
+      name: :errata,
+      files: ["lib", "mix.exs", "README.md", "LICENSE", "CHANGELOG.md"],
+      maintainers: ["Jason Voegele"],
+      licenses: ["Apache-2.0"],
+      links: %{"GitHub" => @source_url}
+    ]
+  end
+
+  defp docs do
+    [
+      main: "Errata",
+      extras: [
+        "CHANGELOG.md": [title: "Changelog"],
+        LICENSE: [title: "License"]
+      ]
     ]
   end
 end
