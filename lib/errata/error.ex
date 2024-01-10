@@ -14,11 +14,11 @@ defmodule Errata.Error do
   @type t() :: %{
           __struct__: module(),
           __exception__: true,
-          __errata_error_kind__: atom(),
+          __errata_error_kind__: Errata.error_kind(),
           message: String.t() | nil,
           reason: atom() | nil,
           extra: map() | nil,
-          env: env()
+          env: Errata.Env.t()
         }
 
   @typedoc """
@@ -36,28 +36,6 @@ defmodule Errata.Error do
   """
   @type params :: Enumerable.t({param(), any()})
 
-  @typedoc """
-  Type to represent the `:env` field of error structs.
-
-  This struct is a subset of of `Macro.Env` and contains the following fields:
-
-    * `context` - the context of the environment; it can be nil (default context), :guard
-      (inside a guard) or :match (inside a match)
-    * `context_modules` - a list of modules defined in the current context
-    * `file` - the current absolute file name as a binary
-    * `function` - a tuple as {atom, integer}, where the first element is the function name and
-      the second its arity; returns nil if not inside a function
-    * `line` - the current line as an integer
-    * `module` - the current module name
-  """
-  @type env :: %{
-          context: Macro.Env.context(),
-          context_modules: Macro.Env.context_modules(),
-          file: Macro.Env.file(),
-          function: Macro.Env.name_arity() | nil,
-          line: Macro.Env.line(),
-          module: module()
-        }
   @doc """
   Invoked to create a new instance of an error struct with default values.
 
@@ -72,7 +50,7 @@ defmodule Errata.Error do
 
   @doc """
   Invoked to create a new instance of an error struct with default values and the current
-  __ENV__.
+  `__ENV__`.
 
   See `c:create/1`.
   """
@@ -80,7 +58,7 @@ defmodule Errata.Error do
 
   @doc """
   Invoked to create a new instance of an error struct with the given params and the current
-  __ENV__.
+  `__ENV__`.
 
   Since this is a  macro, the `__ENV__/0` special form is used to capture the `Macro.Env` struct
   for the current environment and the public fields of this struct are placed in the exception
@@ -104,11 +82,11 @@ defmodule Errata.Error do
   end
 
   @doc false
-  @spec create(module() | struct(), Errata.Error.params(), Macro.Env.t()) :: t()
+  @spec create(module() | struct(), Errata.Error.params(), Macro.Env.t()) :: Errata.error()
   def create(error_type, params, %Macro.Env{} = env) do
     error = struct(error_type, params)
 
-    %{error | env: make_env(env)}
+    %{error | env: Errata.Env.new(env)}
   end
 
   @doc false
@@ -117,7 +95,7 @@ defmodule Errata.Error do
       error_type: error_type,
       reason: error.reason,
       message: error.message,
-      env: env_map(error),
+      env: Errata.Env.to_map(error.env),
       extra: extra_map(error)
     }
   end
@@ -137,29 +115,6 @@ defmodule Errata.Error do
     |> to_map()
     |> Errata.JSON.encode(opts)
   end
-
-  @doc false
-  @spec make_env(Macro.Env.t()) :: Errata.Error.env()
-  def make_env(%Macro.Env{} = env),
-    do: Map.take(env, [:context, :context_modules, :file, :function, :line, :module])
-
-  @doc false
-  defp env_map(%{env: %{module: module, file: file, line: line} = env}) do
-    %{
-      module: module,
-      function: format_mfa(env),
-      file: file,
-      line: line,
-      file_line: Exception.format_file_line(file, line)
-    }
-  end
-
-  defp env_map(_), do: %{}
-
-  defp format_mfa(%{module: module, function: {function, arity}}),
-    do: Exception.format_mfa(module, function, arity)
-
-  defp format_mfa(_), do: nil
 
   @doc false
   defp extra_map(%{extra: extra}) when is_map(extra) do

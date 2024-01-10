@@ -59,34 +59,6 @@ defmodule Errata.DomainError do
       end
   """
 
-  @typedoc """
-  Type to represent domain error structs as defined by this module.
-  """
-  @type t() :: %{
-          __struct__: module(),
-          __exception__: true,
-          __errata_error_kind__: Errata.DomainError,
-          message: String.t() | nil,
-          reason: atom() | nil,
-          extra: map() | nil,
-          env: Errata.Error.env()
-        }
-
-  @doc """
-  Returns `true` if `term` is a type of `Errata.DomainError`; otherwise returns `false`.
-
-  Allowed in guard tests.
-  """
-  defguard is_domain_error(term)
-           when is_struct(term) and
-                  is_exception(term) and
-                  is_map_key(term, :__errata_error_kind__) and
-                  term.__errata_error_kind__ == Errata.DomainError and
-                  is_map_key(term, :message) and
-                  is_map_key(term, :reason) and
-                  is_map_key(term, :extra) and
-                  is_map_key(term, :env)
-
   defmacro __using__(opts) do
     default_message = Keyword.get(opts, :default_message)
     default_reason = Keyword.get(opts, :default_reason)
@@ -94,7 +66,7 @@ defmodule Errata.DomainError do
     quote do
       @behaviour Errata.Error
 
-      defexception __errata_error_kind__: Errata.DomainError,
+      defexception __errata_error_kind__: :domain,
                    message: unquote(default_message),
                    reason: unquote(default_reason),
                    extra: nil,
