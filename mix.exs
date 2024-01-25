@@ -8,7 +8,8 @@ defmodule Errata.MixProject do
     [
       app: :errata,
       version: @version,
-      elixir: "~> 1.13",
+      elixir: "~> 1.15",
+      elixirc_paths: elixirc_paths(Mix.env()),
       consolidate_protocols: Mix.env() != :test,
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -30,6 +31,9 @@ defmodule Errata.MixProject do
       extra_applications: [:logger]
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do

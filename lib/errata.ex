@@ -8,31 +8,16 @@ defmodule Errata do
 
     * _Domain Errors_ represent error conditions within a problem domain or bounded context. These
       are business process violations or other errors in the problem domain, and therefore domain
-      errors should be included in the Ubiquitous Language of the domain.
+      errors should be included as part of the Ubiquitous Language of the domain.
     * _Infrastructure Errors_ represent errors that can occur at an infrastructure level but which
-      are not part of the problem domain.
+      are not part of the problem domain. Infrastructure errors include such things as network
+      timeouts, database connection failures, filesystem errors, etc.
   """
 
   @typedoc """
   Type to represent the various kinds of Errata errors.
   """
   @type error_kind :: :domain | :infrastructure
-
-  @typedoc """
-  Type to represent any kind of Errata error.
-
-  Errata errors are `Exception` structs that have additional fields to contain extra contextual
-  information, such as an error reason or details about the context in which the error occurred.
-  """
-  @type error :: %{
-          __struct__: module(),
-          __exception__: true,
-          __errata_error_kind__: error_kind(),
-          message: String.t() | nil,
-          reason: atom() | nil,
-          extra: map() | nil,
-          env: Errata.Env.t() | nil
-        }
 
   @typedoc """
   Type to represent Errata domain errors.
@@ -59,6 +44,14 @@ defmodule Errata do
           extra: map() | nil,
           env: Errata.Env.t() | nil
         }
+
+  @typedoc """
+  Type to represent any kind of Errata error.
+
+  Errata errors are `Exception` structs that have additional fields to contain extra contextual
+  information, such as an error reason or details about the context in which the error occurred.
+  """
+  @type error :: domain_error() | infrastructure_error()
 
   @doc """
   Returns `true` if `term` is a type of `Errata.Error`; otherwise returns `false`.
