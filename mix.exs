@@ -61,7 +61,12 @@ defmodule Errata.MixProject do
       extras: [
         "CHANGELOG.md": [title: "Changelog"],
         LICENSE: [title: "License"]
-      ]
+      ],
+      filter_modules: fn _module, meta ->
+        # This allows us to tag modules as internal and exclude them from the API docs as follows:
+        #         #   @moduledoc internal: true
+        not Map.get(meta, :internal, false)
+      end
     ]
   end
 end

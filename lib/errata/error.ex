@@ -1,9 +1,76 @@
 defmodule Errata.Error do
   @moduledoc """
-  Defines callbacks and types common to all kinds of Errata errors.
-  """
+  Support for creating custom error types, which can either be returned as error values or raised
+  as exceptions.
 
-  import Errata
+  Errata errors can be defined by creating an Elixir module that uses the `Errata.Error`
+  module. Error types defined in this way are Elixir `Exception` structs with the following keys:
+
+    * `message` - human readable string describing the nature of the error
+    * `reason` - an atom describing the reason for the error, which can be used for pattern
+      matching or classifying the error
+    * `extra` - a map containing arbitrary contextual information or metadata about the error
+
+  Because these error types are defined with `defexception/1`, they can be raised as exceptions
+  with `raise/2`. However, because they implement the `Errata.Error` behaviour, it is also
+  possible to create instances of these error structs using the generated implementations of
+  `c:Errata.Error.new/1` or `c:Errata.Error.create/1` and use them as return values from
+  functions, either directly or wrapped in an error tuple such as `{:error, my_error}`.
+
+  ## Usage
+
+  To define a new custom error type, `use/2` the `Errata.Error` module in your own error module:
+
+      defmodule MyApp.SomeError do
+        use Errata.Error,
+          default_message: "something isn't right"
+      end
+
+  > #### `use Errata.Error` {: .info}
+  >
+  > When you `use Errata.Error`, the `Errata.Error` module will define an exception struct with
+  > `defexception/1` and will generate an implementation of the `Errata.Error` behaviour.
+
+  The following options may be provided to `use Errata.Error`:
+
+    * `:default_reason` - the default value to use for the `:reason` field if it is not provided
+    * `:default_message` - the default value to use for the `:message` field if it is not provided
+    * `:kind` - the "kind" of Errata error to create, one of `:domain`, `:infrastructure`, or
+      `:general` (which is the default)
+
+  > #### The `:kind` option {: .warning}
+  >
+  > Although it is possible to define domain error types or infrastructure error types by using
+  > `:domain` or `:infrastructure` as the `:kind` option, it is preferred to instead define these
+  > types of errors with `use Errata.DomainError` or `use Errata.InfrastructureError`. This
+  > approach is more explicit and allows for easier identification of domain errors and
+  > infrastructure errors within an application.
+
+  To create instances of the error--to use as an error return value from a function, say--you can
+  use either `c:new/1` or `c:create/1`, passing params with extra information as desired. Note that
+  if you use `c:create/1`, you must first `require` the error module, since this callback is
+  implemented as a macro. For example:
+
+      defmodule MyApp.SomeModule do
+        require MyApp.SomeError, as: SomeError
+
+        def some_function(arg) do
+          {:error, SomeError.create(reason: :helpful_tag, extra: %{arbitrary: "metadata", arg: arg})}
+        end
+      end
+
+  To raise errors as exceptions, simply use `raise/2` passing extra params as the second argument
+  if desired:
+
+      defmodule MyApp.SomeModule do
+        require MyApp.SomeError, as: SomeError
+
+        def some_function!(arg) do
+          raise SomeError reason: :helpful_tag, extra: %{arbitrary: "metadata", arg: arg}
+        end
+      end
+
+  """
 
   @typedoc """
   Type to represent Errata error structs.
@@ -14,6 +81,7 @@ defmodule Errata.Error do
   @type t() :: %{
           __struct__: module(),
           __exception__: true,
+          __errata_error__: true,
           __errata_error_kind__: Errata.error_kind(),
           message: String.t() | nil,
           reason: atom() | nil,
@@ -71,172 +139,16 @@ defmodule Errata.Error do
   @macrocallback create(params()) :: Macro.t()
 
   @doc """
-  Invoked to convert an error to a plain, JSON-compatible map.
+  Invoked to convert an error to a plain, JSON-encodable map.
   """
   @callback to_map(t()) :: map()
 
-  @doc false
-  @spec create(module() | struct(), Errata.Error.params()) :: t()
-  def create(error_type, params) do
-    struct(error_type, params)
-  end
-
-  @doc false
-  @spec create(module() | struct(), Errata.Error.params(), Macro.Env.t()) :: Errata.error()
-  def create(error_type, params, %Macro.Env{} = env) do
-    error = struct(error_type, params)
-
-    %{error | env: Errata.Env.new(env)}
-  end
-
-  @doc false
-  def to_map(%error_type{} = error) when is_error(error) do
-    %{
-      error_type: error_type,
-      reason: error.reason,
-      message: error.message,
-      env: Errata.Env.to_map(error.env),
-      extra: extra_map(error)
-    }
-  end
-
-  @doc false
-  @spec format_message(t()) :: String.t()
-  def format_message(error)
-
-  def format_message(%{message: message, reason: reason} = error)
-      when is_error(error) and is_binary(message) do
-    if reason, do: "#{message}: #{inspect(reason)}", else: message
-  end
-
-  @doc false
-  def to_json(error, opts) do
-    error
-    |> to_map()
-    |> Errata.JSON.encode(opts)
-  end
-
-  @doc false
-  def __define__(kind, module_name, opts \\ [])
-      when kind in [:domain, :infrastructure] and is_atom(module_name) do
-    attribute_defs = define_attributes(module_name)
-    type_def = define_type(kind)
-    exception_def = define_exception(kind, opts)
-    errata_error_impl = define_errata_error_callbacks()
-    string_chars_impl = define_string_chars_impl(module_name)
-    jason_encoder_impl = define_jason_encoder_impl(module_name)
+  defmacro __using__(opts) do
+    kind = Keyword.get(opts, :kind, :general)
+    ast = Errata.Errors.define(kind, __CALLER__.module, opts)
 
     quote do
-      unquote(attribute_defs)
-      unquote(type_def)
-      unquote(exception_def)
-      unquote(errata_error_impl)
-      unquote(string_chars_impl)
-      unquote(jason_encoder_impl)
-    end
-  end
-
-  @doc false
-  defp extra_map(%{extra: extra}) when is_map(extra) do
-    # Make sure that all of the data in the `extra` map is JSON-encodable
-    Enum.reduce(extra, Map.new(), fn {key, value}, acc ->
-      if Errata.JSON.encodable?(value) do
-        Map.put(acc, key, value)
-      else
-        Map.put(acc, key, inspect(value))
-      end
-    end)
-  end
-
-  defp extra_map(_), do: %{}
-
-  defp define_attributes(module_name) do
-    quote do
-      @__errata_error_module__ unquote(module_name)
-      @behaviour Errata.Error
-    end
-  end
-
-  defp define_type(:domain) do
-    quote do
-      @type t :: Errata.domain_error()
-    end
-  end
-
-  defp define_type(:infrastructure) do
-    quote do
-      @type t :: Errata.infrastructure_error()
-    end
-  end
-
-  defp define_exception(kind, opts) do
-    default_message = Keyword.get(opts, :default_message)
-    default_reason = Keyword.get(opts, :default_reason)
-
-    quote do
-      defexception __errata_error_kind__: unquote(kind),
-                   message: unquote(default_message),
-                   reason: unquote(default_reason),
-                   extra: nil,
-                   env: nil
-
-      @impl Exception
-      def exception(params) do
-        Errata.Error.create(@__errata_error_module__, params)
-      end
-
-      @impl Exception
-      def message(%{} = errata_error) do
-        Errata.Error.format_message(errata_error)
-      end
-
-      defoverridable Exception
-    end
-  end
-
-  defp define_errata_error_callbacks do
-    quote do
-      @impl Errata.Error
-      def new(params \\ %{}), do: Errata.Error.create(@__errata_error_module__, params)
-
-      @impl Errata.Error
-      defmacro create do
-        __module__ = @__errata_error_module__
-
-        quote do
-          Errata.Error.create(unquote(__module__), %{}, __ENV__)
-        end
-      end
-
-      @impl Errata.Error
-      defmacro create(params) do
-        __module__ = @__errata_error_module__
-
-        quote do
-          Errata.Error.create(unquote(__module__), unquote(params), __ENV__)
-        end
-      end
-
-      @impl Errata.Error
-      def to_map(errata_error), do: Errata.Error.to_map(errata_error)
-    end
-  end
-
-  defp define_string_chars_impl(error_module) do
-    quote do
-      defimpl String.Chars, for: unquote(error_module) do
-        def to_string(errata_error), do: Errata.Error.format_message(errata_error)
-      end
-    end
-  end
-
-  defp define_jason_encoder_impl(error_module) do
-    quote do
-      defimpl Jason.Encoder, for: unquote(error_module) do
-        def encode(errata_error, opts) do
-          Errata.Error.to_json(errata_error, opts)
-        end
-      end
+      unquote(ast)
     end
   end
 end

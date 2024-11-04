@@ -1,11 +1,11 @@
 defmodule TestError do
-  use Errata.DomainError,
+  use Errata.Error,
     default_message: "this is only a test",
     default_reason: :testing_123
 end
 
-defmodule Errata.DomainErrorTest do
-  @moduledoc "Tests for the Errata.DomainError module"
+defmodule Errata.ErrorTest do
+  @moduledoc "Tests for the Errata.Error module"
 
   use ExUnit.Case
 
@@ -57,7 +57,7 @@ defmodule Errata.DomainErrorTest do
       refute error.extra
 
       assert %{module: module, function: _, file: _, line: _} = error.env
-      assert module == Errata.DomainErrorTest
+      assert module == Errata.ErrorTest
     end
   end
 
@@ -101,9 +101,9 @@ defmodule Errata.DomainErrorTest do
       assert map.extra == %{foo: "bar"}
 
       assert map.env.module == __MODULE__
-      assert map.env.file =~ ~r<domain_error_test\.exs>
+      assert map.env.file =~ ~r<error_test\.exs>
       assert is_integer(map.env.line)
-      assert map.env.file_line =~ ~r<domain_error_test\.exs:\d>
+      assert map.env.file_line =~ ~r<error_test\.exs:\d>
       assert map.env.function =~ ~r<test to_map/1>
     end
   end
@@ -138,7 +138,7 @@ defmodule Errata.DomainErrorTest do
     end
   end
 
-  describe "String.Chars protocol implementation" do
+  describe "String.Chars protocol implementation:" do
     test "string representation uses message and reason when both are present" do
       assert to_string(TestError.new()) == "this is only a test: :testing_123"
     end
@@ -148,19 +148,24 @@ defmodule Errata.DomainErrorTest do
     end
   end
 
-  describe "Jason.Encoder protocol implementation" do
+  describe "Jason.Encoder protocol implementation:" do
     require TestError
 
     test "produces JSON data for the relevant fields" do
       error =
-        TestError.create(reason: :to_believe, extra: %{meta: "data", danger: {:error, "tuple"}})
+        TestError.create(
+          reason: :to_believe,
+          extra: %{meta: "data", danger: {:error, "tuple"}, pid: self()}
+        )
 
       assert {:ok, decoded} = error |> Jason.encode!() |> Jason.decode(keys: :atoms)
       assert decoded.message == error.message
       assert decoded.reason == to_string(error.reason)
+      assert %{meta: "data", danger: ["error", "tuple"], pid: pid_string} = decoded.extra
+      assert pid_string =~ ~r(#PID<\d+\.\d+\.\d+>)
 
       assert %{file: file, line: line, module: module, function: function} = decoded.env
-      assert file =~ ~r/domain_error_test.exs$/
+      assert file =~ ~r/error_test.exs$/
       assert is_integer(line)
       assert module == to_string(__MODULE__)
 

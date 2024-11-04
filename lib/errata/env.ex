@@ -29,18 +29,31 @@ defmodule Errata.Env do
           module: module()
         }
 
+  @typedoc """
+  Type to represent an `Errata.Env` struct as a plain, JSON-encodable map.
+  """
+  @type env_map :: %{
+          module: module(),
+          function: String.t(),
+          file: Macro.Env.file(),
+          line: Macro.Env.line(),
+          file_line: String.t()
+        }
+
   defstruct [:context, :context_modules, :file, :function, :line, :module]
 
   @doc """
   Creates a new `Errata.Env` struct from the given `Macro.Env` struct.
   """
+  @spec new(Macro.Env.t()) :: Errata.Env.t()
   def new(%Macro.Env{} = env) do
     struct(__MODULE__, Map.from_struct(env))
   end
 
   @doc """
-  Converts the given `Errata.Env` struct to a plain, JSON-compatible map.
+  Converts the given `Errata.Env` struct to a plain, JSON-encodable map.
   """
+  @spec to_map(Errata.Env.t()) :: Errata.Env.env_map()
   def to_map(%__MODULE__{module: module, file: file, line: line} = env) do
     %{
       module: module,

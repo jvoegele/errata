@@ -5,6 +5,10 @@ defmodule ErrataTest do
 
   doctest Errata
 
+  defmodule TestGeneralError do
+    use Errata.Error
+  end
+
   defmodule TestDomainError do
     use Errata.DomainError
   end
@@ -18,6 +22,11 @@ defmodule ErrataTest do
   end
 
   describe "is_error/1" do
+    test "returns true for general Errata errors" do
+      assert is_error(TestGeneralError.new())
+      assert is_error(%TestGeneralError{})
+    end
+
     test "returns true for domain errors" do
       assert is_error(TestDomainError.new())
       assert is_error(%TestDomainError{})
@@ -52,6 +61,11 @@ defmodule ErrataTest do
   end
 
   describe "is_domain_error/1" do
+    test "returns false for general Errata errors" do
+      refute is_domain_error(TestGeneralError.new())
+      refute is_domain_error(%TestGeneralError{})
+    end
+
     test "returns true for domain errors" do
       assert is_domain_error(TestDomainError.new())
       assert is_domain_error(%TestDomainError{})
@@ -86,6 +100,11 @@ defmodule ErrataTest do
   end
 
   describe "is_infrastructure_error/1" do
+    test "returns false for general Errata errors" do
+      refute is_infrastructure_error(TestGeneralError.new())
+      refute is_infrastructure_error(%TestGeneralError{})
+    end
+
     test "returns false for domain errors" do
       refute is_infrastructure_error(TestDomainError.new())
       refute is_infrastructure_error(%TestDomainError{})
