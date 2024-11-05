@@ -17,6 +17,10 @@ defmodule Errata.Error do
   `c:Errata.Error.new/1` or `c:Errata.Error.create/1` and use them as return values from
   functions, either directly or wrapped in an error tuple such as `{:error, my_error}`.
 
+  Error types defined with `Errata.Error` are of kind `:general` by default. See also
+  `Errata.DomainError` and `Errata.InfrastructureError` for defining domain errors and
+  infrastructure errors, specifically.
+
   ## Usage
 
   To define a new custom error type, `use/2` the `Errata.Error` module in your own error module:

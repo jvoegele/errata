@@ -1,3 +1,19 @@
+# The three modules defined below are declared here to support doctests in the README.md file
+defmodule MyApp.SomeContext.MyDomainError do
+  # Define a custom domain error in some context.
+  use Errata.DomainError
+end
+
+defmodule MyApp.SomeContext.MyInfrastructureError do
+  # Define a custom infrastructure error in some context.
+  use Errata.InfrastructureError
+end
+
+defmodule MyApp.SomeContext.MyError do
+  # Define a custom error in some context.
+  use Errata.Error
+end
+
 defmodule ErrataTest do
   use ExUnit.Case
 
