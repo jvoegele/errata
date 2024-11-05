@@ -56,8 +56,10 @@ defmodule Errata.ErrorTest do
       assert error.reason == :testing_123
       refute error.extra
 
-      assert %{module: module, function: _, file: _, line: _} = error.env
+      assert %{module: module, function: _, file: _, line: _, stacktrace: stacktrace} = error.env
       assert module == Errata.ErrorTest
+      assert is_list(stacktrace)
+      assert [{__MODULE__, _, _, _} | _] = stacktrace
     end
   end
 

@@ -13,6 +13,7 @@ defmodule Errata.Env do
       the second its arity; returns nil if not inside a function
     * `line` - the current line as an integer
     * `module` - the current module name
+    * `stacktrace` - the stacktrace for the current process at the time of creation
   """
 
   @typedoc """
@@ -26,7 +27,8 @@ defmodule Errata.Env do
           file: Macro.Env.file(),
           function: Macro.Env.name_arity() | nil,
           line: Macro.Env.line(),
-          module: module()
+          module: module(),
+          stacktrace: Exception.stacktrace() | nil
         }
 
   @typedoc """
@@ -40,14 +42,27 @@ defmodule Errata.Env do
           file_line: String.t()
         }
 
-  defstruct [:context, :context_modules, :file, :function, :line, :module]
+  defstruct [:context, :context_modules, :file, :function, :line, :module, :stacktrace]
 
   @doc """
   Creates a new `Errata.Env` struct from the given `Macro.Env` struct.
   """
   @spec new(Macro.Env.t()) :: Errata.Env.t()
-  def new(%Macro.Env{} = env) do
-    struct(__MODULE__, Map.from_struct(env))
+  def new(%Macro.Env{} = env, stacktrace \\ nil) do
+    stacktrace =
+      if is_list(stacktrace) do
+        stacktrace
+      else
+        {:current_stacktrace, stacktrace} = Process.info(self(), :current_stacktrace)
+        stacktrace
+      end
+
+    params =
+      env
+      |> Map.from_struct()
+      |> Map.put(:stacktrace, stacktrace)
+
+    struct(__MODULE__, params)
   end
 
   @doc """

@@ -10,11 +10,12 @@ defmodule Errata.Errors do
   end
 
   @doc false
-  @spec create(module() | struct(), Errata.Error.params(), Macro.Env.t()) :: Errata.error()
-  def create(error_type, params, %Macro.Env{} = env) do
+  @spec create(module() | struct(), Errata.Error.params(), Macro.Env.t(), Exception.stacktrace()) ::
+          Errata.error()
+  def create(error_type, params, %Macro.Env{} = env, stacktrace) do
     error = struct(error_type, params)
 
-    %{error | env: Errata.Env.new(env)}
+    %{error | env: Errata.Env.new(env, stacktrace)}
   end
 
   @doc false
@@ -139,7 +140,10 @@ defmodule Errata.Errors do
         __module__ = @__errata_error_module__
 
         quote do
-          Errata.Errors.create(unquote(__module__), %{}, __ENV__)
+          {:current_stacktrace, [_process_info_call | stacktrace]} =
+            Process.info(self(), :current_stacktrace)
+
+          Errata.Errors.create(unquote(__module__), %{}, __ENV__, stacktrace)
         end
       end
 
@@ -148,7 +152,10 @@ defmodule Errata.Errors do
         __module__ = @__errata_error_module__
 
         quote do
-          Errata.Errors.create(unquote(__module__), unquote(params), __ENV__)
+          {:current_stacktrace, [_process_info_call | stacktrace]} =
+            Process.info(self(), :current_stacktrace)
+
+          Errata.Errors.create(unquote(__module__), unquote(params), __ENV__, stacktrace)
         end
       end
 
