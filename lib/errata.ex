@@ -18,17 +18,44 @@ defmodule Errata do
   Errata errors are `Exception` structs that have additional fields to contain extra contextual
   information, such as an error reason or details about the context in which the error occurred.
   """
-  @type error :: Errata.Error.t()
+  @type error :: %{
+          __struct__: module(),
+          __exception__: true,
+          __errata_error__: true,
+          kind: Errata.error_kind(),
+          message: String.t() | nil,
+          reason: atom() | nil,
+          context: map() | nil,
+          env: Errata.Env.t()
+        }
 
   @typedoc """
   Type to represent Errata domain errors.
   """
-  @type domain_error :: Errata.DomainError.t()
+  @type domain_error :: %{
+          __struct__: module(),
+          __exception__: true,
+          __errata_error__: true,
+          kind: :domain,
+          message: String.t() | nil,
+          reason: atom() | nil,
+          context: map() | nil,
+          env: Errata.Env.t() | nil
+        }
 
   @typedoc """
   Type to represent Errata infrastructure errors.
   """
-  @type infrastructure_error :: Errata.InfrastructureError.t()
+  @type infrastructure_error :: %{
+          __struct__: module(),
+          __exception__: true,
+          __errata_error__: true,
+          kind: :infrastructure,
+          message: String.t() | nil,
+          reason: atom() | nil,
+          context: map() | nil,
+          env: Errata.Env.t() | nil
+        }
 
   @doc """
   Returns `true` if `term` is any Errata error type; otherwise returns `false`.
@@ -40,8 +67,8 @@ defmodule Errata do
                   is_exception(term) and
                   is_map_key(term, :__errata_error__) and
                   :erlang.map_get(:__errata_error__, term) == true and
-                  is_map_key(term, :__errata_error_kind__) and
-                  :erlang.map_get(:__errata_error_kind__, term) in [
+                  is_map_key(term, :kind) and
+                  :erlang.map_get(:kind, term) in [
                     :domain,
                     :infrastructure,
                     :general
@@ -58,7 +85,7 @@ defmodule Errata do
   """
   defguard is_domain_error(term)
            when is_error(term) and
-                  :erlang.map_get(:__errata_error_kind__, term) == :domain
+                  :erlang.map_get(:kind, term) == :domain
 
   @doc """
   Returns `true` if `term` is an Errata infrastructure error type; otherwise returns `false`.
@@ -67,5 +94,5 @@ defmodule Errata do
   """
   defguard is_infrastructure_error(term)
            when is_error(term) and
-                  :erlang.map_get(:__errata_error_kind__, term) == :infrastructure
+                  :erlang.map_get(:kind, term) == :infrastructure
 end

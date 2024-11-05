@@ -28,16 +28,7 @@ defmodule Errata.DomainError do
   @typedoc """
   Type to represent Errata domain errors.
   """
-  @type t :: %{
-          __struct__: module(),
-          __exception__: true,
-          __errata_error__: true,
-          __errata_error_kind__: :domain,
-          message: String.t() | nil,
-          reason: atom() | nil,
-          context: map() | nil,
-          env: Errata.Env.t() | nil
-        }
+  @type t :: Errata.domain_error()
 
   defmacro __using__(opts) do
     ast = Errata.Errors.define(:domain, __CALLER__.module, opts)

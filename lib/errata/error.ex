@@ -82,16 +82,7 @@ defmodule Errata.Error do
   Error structs are `Exception` structs that have additional fields to contain extra contextual
   information, such as an error reason or details about the context in which the error occurred.
   """
-  @type t() :: %{
-          __struct__: module(),
-          __exception__: true,
-          __errata_error__: true,
-          __errata_error_kind__: Errata.error_kind(),
-          message: String.t() | nil,
-          reason: atom() | nil,
-          context: map() | nil,
-          env: Errata.Env.t()
-        }
+  @type t() :: Errata.error()
 
   @typedoc """
   Type to represent allowable keys to use in params used for creating error structs.

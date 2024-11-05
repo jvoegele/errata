@@ -110,7 +110,7 @@ defmodule Errata.Errors do
 
     quote do
       defexception __errata_error__: true,
-                   __errata_error_kind__: unquote(kind),
+                   kind: unquote(kind),
                    message: unquote(default_message),
                    reason: unquote(default_reason),
                    context: nil,

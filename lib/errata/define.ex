@@ -44,7 +44,7 @@ defmodule Errata.Define do
     default_reason = Keyword.get(opts, :default_reason)
 
     quote do
-      defexception __errata_error_kind__: unquote(kind),
+      defexception kind: unquote(kind),
                    message: unquote(default_message),
                    reason: unquote(default_reason),
                    context: nil,
