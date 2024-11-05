@@ -48,7 +48,7 @@ defmodule Errata do
                   ] and
                   is_map_key(term, :message) and
                   is_map_key(term, :reason) and
-                  is_map_key(term, :extra) and
+                  is_map_key(term, :context) and
                   is_map_key(term, :env)
 
   @doc """

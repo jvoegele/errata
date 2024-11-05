@@ -47,7 +47,7 @@ defmodule Errata.Define do
       defexception __errata_error_kind__: unquote(kind),
                    message: unquote(default_message),
                    reason: unquote(default_reason),
-                   extra: nil,
+                   context: nil,
                    env: nil
 
       @impl Exception

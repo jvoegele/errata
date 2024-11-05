@@ -25,7 +25,7 @@ defmodule Errata.Errors do
       reason: error.reason,
       message: error.message,
       env: Errata.Env.to_map(error.env),
-      extra: extra_map(error)
+      context: context_map(error)
     }
   end
 
@@ -66,9 +66,9 @@ defmodule Errata.Errors do
   end
 
   @doc false
-  defp extra_map(%{extra: extra}) when is_map(extra) do
-    # Make sure that all of the data in the `extra` map is JSON-encodable
-    Enum.reduce(extra, Map.new(), fn {key, value}, acc ->
+  defp context_map(%{context: context}) when is_map(context) do
+    # Make sure that all of the data in the `context` map is JSON-encodable
+    Enum.reduce(context, Map.new(), fn {key, value}, acc ->
       if Errata.JSON.encodable?(value) do
         Map.put(acc, key, value)
       else
@@ -77,7 +77,7 @@ defmodule Errata.Errors do
     end)
   end
 
-  defp extra_map(_), do: %{}
+  defp context_map(_), do: %{}
 
   defp define_attributes(module_name) do
     quote do
@@ -113,7 +113,7 @@ defmodule Errata.Errors do
                    __errata_error_kind__: unquote(kind),
                    message: unquote(default_message),
                    reason: unquote(default_reason),
-                   extra: nil,
+                   context: nil,
                    env: nil
 
       @impl Exception

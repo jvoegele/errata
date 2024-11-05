@@ -9,7 +9,7 @@ defmodule Errata.Error do
     * `message` - human readable string describing the nature of the error
     * `reason` - an atom describing the reason for the error, which can be used for pattern
       matching or classifying the error
-    * `extra` - a map containing arbitrary contextual information or metadata about the error
+    * `context` - a map containing arbitrary contextual information or metadata about the error
 
   Because these error types are defined with `defexception/1`, they can be raised as exceptions
   with `raise/2`. However, because they implement the `Errata.Error` behaviour, it is also
@@ -59,7 +59,7 @@ defmodule Errata.Error do
         require MyApp.SomeError, as: SomeError
 
         def some_function(arg) do
-          {:error, SomeError.create(reason: :helpful_tag, extra: %{arbitrary: "metadata", arg: arg})}
+          {:error, SomeError.create(reason: :helpful_tag, context: %{arbitrary: "metadata", arg: arg})}
         end
       end
 
@@ -70,7 +70,7 @@ defmodule Errata.Error do
         require MyApp.SomeError, as: SomeError
 
         def some_function!(arg) do
-          raise SomeError reason: :helpful_tag, extra: %{arbitrary: "metadata", arg: arg}
+          raise SomeError reason: :helpful_tag, context: %{arbitrary: "metadata", arg: arg}
         end
       end
 
@@ -89,7 +89,7 @@ defmodule Errata.Error do
           __errata_error_kind__: Errata.error_kind(),
           message: String.t() | nil,
           reason: atom() | nil,
-          extra: map() | nil,
+          context: map() | nil,
           env: Errata.Env.t()
         }
 
@@ -98,7 +98,7 @@ defmodule Errata.Error do
 
   See also `t:params/0`.
   """
-  @type param :: :message | :reason | :extra
+  @type param :: :message | :reason | :context
 
   @typedoc """
   Type to represent allowable values to be passes as params for creating error structs.

@@ -34,7 +34,7 @@ defmodule ErrataTest do
   end
 
   defmodule NonErrataError do
-    defexception [:message, :reason, :extra, :env]
+    defexception [:message, :reason, :context, :env]
   end
 
   describe "is_error/1" do
@@ -65,7 +65,7 @@ defmodule ErrataTest do
     test "returns false for anything else" do
       refute is_error(nil)
       refute is_error(%{})
-      refute is_error(message: "", reason: :because, extra: %{}, env: __ENV__)
+      refute is_error(message: "", reason: :because, context: %{}, env: __ENV__)
     end
 
     test "can be used in guard tests" do
@@ -104,7 +104,7 @@ defmodule ErrataTest do
     test "returns false for anything else" do
       refute is_domain_error(nil)
       refute is_domain_error(%{})
-      refute is_domain_error(message: "", reason: :because, extra: %{}, env: __ENV__)
+      refute is_domain_error(message: "", reason: :because, context: %{}, env: __ENV__)
     end
 
     test "can be used in guard tests" do
@@ -143,7 +143,7 @@ defmodule ErrataTest do
     test "returns false for anything else" do
       refute is_infrastructure_error(nil)
       refute is_infrastructure_error(%{})
-      refute is_infrastructure_error(message: "", reason: :because, extra: %{}, env: __ENV__)
+      refute is_infrastructure_error(message: "", reason: :because, context: %{}, env: __ENV__)
     end
 
     test "can be used in guard tests" do

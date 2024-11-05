@@ -16,7 +16,7 @@ defmodule Errata.ErrorTest do
       error = TestError.new()
       assert error.message == "this is only a test"
       assert error.reason == :testing_123
-      refute error.extra
+      refute error.context
       refute error.env
     end
   end
@@ -26,7 +26,7 @@ defmodule Errata.ErrorTest do
       error = TestError.new(unrecognized: "ignore me")
       assert error.message == "this is only a test"
       assert error.reason == :testing_123
-      refute error.extra
+      refute error.context
       refute error.env
     end
 
@@ -34,15 +34,15 @@ defmodule Errata.ErrorTest do
       error = TestError.new(reason: :be_reasonable)
       assert error.message == "this is only a test"
       assert error.reason == :be_reasonable
-      refute error.extra
+      refute error.context
       refute error.env
     end
 
-    test "sets extra field from params" do
-      error = TestError.new(%{extra: %{foo: "bar"}})
+    test "sets context field from params" do
+      error = TestError.new(%{context: %{foo: "bar"}})
       assert error.message == "this is only a test"
       assert error.reason == :testing_123
-      assert error.extra == %{foo: "bar"}
+      assert error.context == %{foo: "bar"}
       refute error.env
     end
   end
@@ -54,7 +54,7 @@ defmodule Errata.ErrorTest do
       error = TestError.create()
       assert error.message == "this is only a test"
       assert error.reason == :testing_123
-      refute error.extra
+      refute error.context
 
       assert %{module: module, function: _, file: _, line: _, stacktrace: stacktrace} = error.env
       assert module == Errata.ErrorTest
@@ -68,7 +68,7 @@ defmodule Errata.ErrorTest do
       error = TestError.create(unrecognized: "ignore me")
       assert error.message == "this is only a test"
       assert error.reason == :testing_123
-      refute error.extra
+      refute error.context
 
       assert %{module: _, function: _, file: _, line: _} = error.env
     end
@@ -77,16 +77,16 @@ defmodule Errata.ErrorTest do
       error = TestError.create(reason: :be_reasonable)
       assert error.message == "this is only a test"
       assert error.reason == :be_reasonable
-      refute error.extra
+      refute error.context
 
       assert %{module: _, function: _, file: _, line: _} = error.env
     end
 
-    test "sets extra field from params" do
-      error = TestError.create(%{extra: %{foo: "bar"}})
+    test "sets context field from params" do
+      error = TestError.create(%{context: %{foo: "bar"}})
       assert error.message == "this is only a test"
       assert error.reason == :testing_123
-      assert error.extra == %{foo: "bar"}
+      assert error.context == %{foo: "bar"}
 
       assert %{module: _, function: _, file: _, line: _} = error.env
     end
@@ -94,13 +94,13 @@ defmodule Errata.ErrorTest do
 
   describe "to_map/1" do
     test "produces a JSON-compatible map" do
-      error = TestError.create(extra: %{foo: "bar"})
+      error = TestError.create(context: %{foo: "bar"})
       map = TestError.to_map(error)
 
       assert map.error_type == TestError
       assert map.reason == error.reason
       assert map.message == error.message
-      assert map.extra == %{foo: "bar"}
+      assert map.context == %{foo: "bar"}
 
       assert map.env.module == __MODULE__
       assert map.env.file =~ ~r<error_test\.exs>
@@ -119,23 +119,23 @@ defmodule Errata.ErrorTest do
 
       assert error.message == "this is only a test"
       assert error.reason == :testing_123
-      refute error.extra
+      refute error.context
     end
 
     test "raise/2 overrides default values" do
       error =
         assert_raise TestError, "this is only a test: :be_reasonable", fn ->
-          raise TestError, reason: :be_reasonable, extra: %{foo: "bar"}
+          raise TestError, reason: :be_reasonable, context: %{foo: "bar"}
         end
 
       assert error.message == "this is only a test"
       assert error.reason == :be_reasonable
-      assert error.extra == %{foo: "bar"}
+      assert error.context == %{foo: "bar"}
     end
 
     test "exception message omits reason when it is nil" do
       assert_raise TestError, "this is only a test", fn ->
-        raise TestError, reason: nil, extra: %{foo: "bar"}
+        raise TestError, reason: nil, context: %{foo: "bar"}
       end
     end
   end
@@ -157,13 +157,13 @@ defmodule Errata.ErrorTest do
       error =
         TestError.create(
           reason: :to_believe,
-          extra: %{meta: "data", danger: {:error, "tuple"}, pid: self()}
+          context: %{meta: "data", danger: {:error, "tuple"}, pid: self()}
         )
 
       assert {:ok, decoded} = error |> Jason.encode!() |> Jason.decode(keys: :atoms)
       assert decoded.message == error.message
       assert decoded.reason == to_string(error.reason)
-      assert %{meta: "data", danger: ["error", "tuple"], pid: pid_string} = decoded.extra
+      assert %{meta: "data", danger: ["error", "tuple"], pid: pid_string} = decoded.context
       assert pid_string =~ ~r(#PID<\d+\.\d+\.\d+>)
 
       assert %{file: file, line: line, module: module, function: function} = decoded.env

@@ -35,7 +35,7 @@ defmodule Errata.DomainError do
           __errata_error_kind__: :domain,
           message: String.t() | nil,
           reason: atom() | nil,
-          extra: map() | nil,
+          context: map() | nil,
           env: Errata.Env.t() | nil
         }
 

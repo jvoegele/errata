@@ -66,7 +66,7 @@ Since Errata errors are just regular Elixir exceptions with a well-defined
 structure, they can be raised just like any other type of exception.
 
 ```elixir
-raise MyApp.SomeContext.MyDomainError, reason: :invalid_data, extra: %{foo: "bar"}
+raise MyApp.SomeContext.MyDomainError, reason: :invalid_data, context: %{foo: "bar"}
 ```
 
 ## Using Errata errors as return values
@@ -83,8 +83,8 @@ not include any data in the `:env` field of the error struct:
 
 ```elixir
 iex> alias MyApp.SomeContext.MyError
-iex> MyError.new(reason: :invalid_data, extra: %{foo: "bar"})
-%MyError{reason: :invalid_data, extra: %{foo: "bar"}, env: nil}
+iex> MyError.new(reason: :invalid_data, context: %{foo: "bar"})
+%MyError{reason: :invalid_data, context: %{foo: "bar"}, env: nil}
 ```
 
 Using the `create/1` macro, on the other hand, fills in the `:env` field of
@@ -94,10 +94,10 @@ the current stacktrace. To use the `create/1` macro, you must first
 
 ```elixir
 iex> require MyApp.SomeContext.MyError, as: MyError
-iex> error = MyError.create(reason: :invalid_data, extra: %{foo: "bar"})
+iex> error = MyError.create(reason: :invalid_data, context: %{foo: "bar"})
 iex> error.reason == :invalid_data
 true
-iex> error.extra == %{foo: "bar"}
+iex> error.context == %{foo: "bar"}
 true
 iex> match?(%Errata.Env{stacktrace: stacktrace} when is_list(stacktrace), error.env)
 true
