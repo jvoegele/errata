@@ -174,6 +174,51 @@ defmodule MyApp.SomeContext do
 end
 ```
 
+## Compared to traditional approaches to error handling
+
+It is common practice in Elixir (and Erlang) to use error tuples of the form
+`{:error, reason}` as return values from functions to indicate an error
+condition. However, the `reason` value that is used as the second element
+in the tuple is often a simple value such as an atom or (worse) a string, and
+does not typically include sufficient context for interpreting the error.
+While these simple `reason` values are often sufficient for human readers of
+the code when viewed in context, they do not provide enough context to be
+interpreted by code or when viewed as log messages or error reports, where
+the context of where and when the error was originally detected and created
+is not readily apparent.
+
+It is a less common but still widespread practice to raise exceptions for
+errors, instead of or in addition to returning error values from functions.
+Although exceptions do include some contextual information (including, in
+particular, a stacktrace), they lack a common, uniform structure that can be
+used for logging and error handling in general.
+
+Errata, on the other hand, defines a uniform structure that all errors share,
+and allows errors to be created with full contextual details, including
+arbitrary context metadata. This full context is embedded into the error struct
+so that it propagates with the error, whether the error is raised as an
+exception or returned as an error value from a function. Errata errors are also
+JSON-encodable so that they can be easily published to external issue tracking
+systems such as Sentry, for example.
+
+Consider the common pattern pattern of using a `with` expression with a series
+of function calls, each of which is expected to return a tuple either of the
+form `{:ok, result}` or `{:error, reason}`. If the error `reason` does not
+contain sufficient contextual detail about the nature and cause of the error,
+then the `with` expression is forced to handle all possible error values in an
+`else` clause, in order to log or report the error in a meaningful way.
+
+If, instead, the error `reason` for each error is a structured type with full
+context, the `with` expression can omit the `else` clause altogether and allow
+the error to propagate to callers. Since the error includes sufficient context
+it can be logged or reported to an issue tracking system at the boundaries,
+such as a Phoenix controller or a bounded context, without losing the context
+necessary for interpreting or debugging the error.
+
+Chris Keathley provides an in-depth discussion of this point in his blog post
+[Good and Bad Elixir](https://keathley.io/blog/good-and-bad-elixir.html), in
+the section "Avoid `else` in `with` blocks".
+
 <!-- README END -->
 
 ## Installation
