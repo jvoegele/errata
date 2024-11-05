@@ -228,7 +228,7 @@ the section "Avoid `else` in `with` blocks".
 ```elixir
 def deps do
   [
-    {:errata, "~> 0.1.0"}
+    {:errata, "~> 0.8.0"}
   ]
 end
 ```
