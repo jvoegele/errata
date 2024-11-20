@@ -32,10 +32,13 @@ defmodule Errata.Errors do
   @doc false
   @spec format_message(Errata.Error.t()) :: String.t()
   def format_message(error)
+  def format_message(%{message: nil, reason: nil}), do: ""
+  def format_message(%{message: nil, reason: reason}) when is_atom(reason), do: inspect(reason)
+  def format_message(%{message: message, reason: nil}) when is_binary(message), do: message
 
-  def format_message(%{message: message, reason: reason} = error)
-      when is_error(error) and is_binary(message) do
-    if reason, do: "#{message}: #{inspect(reason)}", else: message
+  def format_message(%{message: message, reason: reason})
+      when is_binary(message) and is_atom(reason) do
+    "#{message}: #{inspect(reason)}"
   end
 
   @doc false
