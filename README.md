@@ -1,5 +1,7 @@
 # Errata
 
+[![CI](https://github.com/jvoegele/errata/actions/workflows/ci.yml/badge.svg)](https://github.com/jvoegele/errata/actions/workflows/ci.yml)
+
 <!-- README START -->
 
 Errata is an Elixir library that promotes a consistent and structured approach to
