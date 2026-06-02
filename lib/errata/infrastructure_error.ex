@@ -3,25 +3,23 @@ defmodule Errata.InfrastructureError do
   Infrastructure errors represent errors that can occur at an infrastructure level but which
   are not part of the problem domain.
 
-  Infrastructure errors include such things as network timeouts, database connection failures,
-  filesystem errors, etc. Unlike domain errors, infrastructure errors are not part of the problem
-  domain and therefore are not typically part of the Ubiquitous Language of the domain.
+  Infrastructure errors include such things as network timeouts, database connection failures, and
+  filesystem errors. Unlike domain errors, they are not part of the problem domain and so are not
+  typically part of the Ubiquitous Language of the domain.
 
-  Infrastructure errors can be defined by creating an Elixir module that uses the
-  `Errata.InfrastructureError` module. Error types defined in this way are `Errata.Error` types of
-  kind `:infrastructure`. As such, they share the common structure of all Errata error types and
-  support all of the callbacks defined by the `Errata.Error` behaviour.
-
-  See the module docs for `Errata.Error` for more details.
+  Define an infrastructure error by creating a module that uses `Errata.InfrastructureError`. The
+  resulting type is an `Errata.Error` of kind `:infrastructure`: it shares the common structure of
+  all Errata errors and supports every callback of the `Errata.Error` behaviour. See `Errata.Error`
+  for the full set of options and callbacks.
 
   ## Usage
 
   To define a new custom infrastructure error type, `use/2` the `Errata.InfrastructureError`
   module in your own error module:
 
-      defmodule MyApp.SomeContext.SomeError do
+      defmodule MyApp.Orders.PaymentGatewayTimeout do
         use Errata.InfrastructureError,
-          default_message: "something isn't right with the infrastructure"
+          default_message: "the payment gateway timed out"
       end
   """
 
