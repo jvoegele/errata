@@ -3,19 +3,42 @@ defmodule Errata.Errors do
 
   import Errata
 
+  # The only keys callers are allowed to set when creating an error. Internal
+  # fields (`:kind`, `:env`, `:__errata_error__`) are managed by Errata itself.
+  @allowed_param_keys [:message, :reason, :context]
+
   @doc false
   @spec create(module() | struct(), Errata.Error.params()) :: Errata.Error.t()
   def create(error_type, params) do
-    struct(error_type, params)
+    struct(error_type, validate_params!(params))
   end
 
   @doc false
   @spec create(module() | struct(), Errata.Error.params(), Macro.Env.t(), Exception.stacktrace()) ::
           Errata.error()
   def create(error_type, params, %Macro.Env{} = env, stacktrace) do
-    error = struct(error_type, params)
+    error = struct(error_type, validate_params!(params))
 
     %{error | env: Errata.Env.new(env, stacktrace)}
+  end
+
+  # Reject unknown/misspelled param keys instead of silently dropping them
+  # (which `struct/2` would do). Returns the params unchanged when valid.
+  defp validate_params!(params) do
+    invalid =
+      params
+      |> Enum.map(fn {key, _value} -> key end)
+      |> Enum.reject(&(&1 in @allowed_param_keys))
+
+    case invalid do
+      [] ->
+        params
+
+      keys ->
+        raise ArgumentError,
+              "invalid param key(s) for an Errata error: #{inspect(keys)}. " <>
+                "Allowed keys are #{inspect(@allowed_param_keys)}."
+    end
   end
 
   @doc false
