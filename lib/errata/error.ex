@@ -132,7 +132,7 @@ defmodule Errata.Error do
   Invoked to create a new instance of an error struct with the given params and the current
   `__ENV__`.
 
-  Since this is a  macro, the `__ENV__/0` special form is used to capture the `Macro.Env` struct
+  Since this is a macro, the `__ENV__/0` special form is used to capture the `Macro.Env` struct
   for the current environment and the public fields of this struct are placed in the exception
   struct under the `:env` key. This provides access to information about the context in which the
   error was created, such as the module, function, file, and line. See `t:env/0` for further

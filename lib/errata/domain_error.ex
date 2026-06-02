@@ -2,17 +2,14 @@ defmodule Errata.DomainError do
   @moduledoc """
   Domain errors represent error conditions within a problem domain or bounded context.
 
-  Domain errors are business process violations, dataa consistency errors,  or other errors in the
-  problem domain. Therefore, domain errors should have a meaningful name within a particular
-  context, and the precise meaning of that name should be part of the Ubiquitous Language of the
-  context.
+  Domain errors are business-process violations, data-consistency errors, or other errors within
+  the problem domain. As such, a domain error should have a meaningful name within its context,
+  and the precise meaning of that name should be part of the Ubiquitous Language of the domain.
 
-  Domain errors can be defined by creating an Elixir module that uses the `Errata.DomainError`
-  module. Error types defined in this way are `Errata.Error` types of kind `:domain`. As such,
-  they share the common structure of all Errata error types and support all of the callbacks
-  defined by the `Errata.Error` behaviour.
-
-  See the module docs for `Errata.Error` for more details.
+  Define a domain error by creating a module that uses `Errata.DomainError`. The resulting type
+  is an `Errata.Error` of kind `:domain`: it shares the common structure of all Errata errors and
+  supports every callback of the `Errata.Error` behaviour. See `Errata.Error` for the full set of
+  options and callbacks.
 
   ## Usage
 

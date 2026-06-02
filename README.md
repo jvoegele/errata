@@ -4,52 +4,118 @@
 
 <!-- README START -->
 
-Errata is an Elixir library that promotes a consistent and structured approach to
-error handling.
+Errata is an Elixir library for **structured, named error handling**.
 
-Errata provides support for defining custom structured error types, which can
-either be returned as error values or raised as exceptions.
+In Elixir it is common to signal failure either by returning an error tuple
+(`{:error, reason}`) or by raising an exception. Errata embraces both styles,
+but replaces ad-hoc reasons and loosely structured exceptions with _named,
+structured error types_ that share a consistent shape and carry full contextual
+detail about what went wrong and where.
 
-Errata errors are named, structured types that represent error conditions in an
-application or library. Being named types means that errors have a unique and
-meaningful name within a particular context. Being structured types means that
-errors have a well-defined, consistent structure identifying the nature of the
-error, and can also have arbitrary contextual information attached to them for
-logging or debugging purposes.
+Each Errata error is an `Exception` struct with a well-defined set of fields:
 
-Errata errors fall into one of three general classifications:
+  * `message` — a human-readable description of the error
+  * `reason` — an atom that classifies the error, useful for pattern matching
+  * `context` — a map of arbitrary metadata captured at the site of the error
+  * `env` — the module, function, file, line, and stacktrace where the error
+    was created (see `Errata.Env`)
 
-- _Domain Errors_ represent error conditions within a problem domain or bounded
-  context. These are business process violations or other errors in the problem
-  domain, and therefore domain errors should be included as part of the
+Because the full context is embedded in the struct, it travels with the error
+whether the error is raised or returned as a value, and can be logged, reported,
+or rendered to JSON at the boundaries of the system without losing the
+information needed to interpret it.
+
+With Errata you can:
+
+  * **Define custom error types** in one line with `use Errata.DomainError`,
+    `use Errata.InfrastructureError`, or `use Errata.Error`.
+  * **Use an error as a value or an exception** — the same type can be returned
+    in an `{:error, error}` tuple or raised with `raise/2`.
+  * **Capture rich context** — an error reason, arbitrary metadata, and the
+    exact point of origin (module, function, file, line, and stacktrace).
+  * **Classify errors** as domain, infrastructure, or general, and branch on
+    that classification at system boundaries with the `Errata` guards.
+  * **Serialize errors automatically** — every error type implements the
+    `String.Chars` and `Jason.Encoder` protocols.
+
+## Quick start
+
+```elixir
+# Define a domain error. Errata generates the exception struct, the
+# `Errata.Error` behaviour, and the String.Chars and Jason.Encoder protocols.
+defmodule MyApp.Orders.OrderNotFound do
+  use Errata.DomainError,
+    default_message: "the requested order does not exist"
+end
+
+defmodule MyApp.Orders do
+  require Errata
+
+  # Return the error as a value, capturing the reason, some context, and the
+  # point of origin (via `Errata.create/2`).
+  def fetch_order(id) do
+    with :error <- lookup(id) do
+      {:error, Errata.create(MyApp.Orders.OrderNotFound, reason: :not_found, context: %{order_id: id})}
+    end
+  end
+
+  # ...or raise the very same type as an exception.
+  def fetch_order!(id) do
+    case fetch_order(id) do
+      {:ok, order} -> order
+      {:error, error} -> raise error
+    end
+  end
+end
+```
+
+An Errata error carries its full context with it, and can be rendered to a
+string or to JSON for logging and error reporting:
+
+```elixir
+error = MyApp.Orders.OrderNotFound.new(reason: :not_found, context: %{order_id: 42})
+
+to_string(error)
+#=> "the requested order does not exist: :not_found"
+
+Jason.encode!(error)
+#=> ~s({"error_type":"MyApp.Orders.OrderNotFound","reason":"not_found", ...})
+```
+
+## The three kinds of errors
+
+Every Errata error has a _kind_, which places it into one of three
+classifications:
+
+- _Domain errors_ represent error conditions within a problem domain or bounded
+  context. These are business-process violations or other errors in the problem
+  domain, and so should be part of the
   [Ubiquitous Language](https://martinfowler.com/bliki/UbiquitousLanguage.html)
-  of the domain.
-- _Infrastructure Errors_ represent errors that can occur at an infrastructure
-  level but which are not part of the problem domain. Infrastructure errors
-  include such things as network timeouts, database connection failures,
-  filesystem errors, etc.
-- _General Errors_ represent errors that do not fall into either of the above
-  categories. General errors can include errors that emanate from library code
-  (as opposed to application code) or any other sort of error condition for
-  which there is no need to distinguish based on classification.
+  of the domain. Define them with `Errata.DomainError`.
+- _Infrastructure errors_ represent errors that occur at an infrastructure level
+  but are not part of the problem domain, such as network timeouts, database
+  connection failures, or filesystem errors. Define them with
+  `Errata.InfrastructureError`.
+- _General errors_ are errors that fit neither category, such as errors that
+  emanate from library code, or any error for which the distinction does not
+  matter. Define them with the base `Errata.Error`.
 
-An error's classification—its _kind_—is primarily a concern at the boundaries
-of the system rather than within domain logic. Code at the edges of the
-application (such as a Phoenix fallback controller) can use the custom guards
-described under [Handling Errata errors](#handling-errata-errors) to decide how
-to treat an error based on its kind: domain errors might become `4xx` responses
-that are safe to show to users, while infrastructure errors become `5xx`
+An error's kind is primarily a concern at the _boundaries_ of the system rather
+than within domain logic. Code at the edges of the application (such as a
+Phoenix fallback controller) can branch on an error's kind using the
+[custom guards](#handling-errors) — translating domain errors into `4xx`
+responses that are safe to show users, and infrastructure errors into `5xx`
 responses that are logged with alerting and hidden from users. Within your
-domain logic, by contrast, you typically dispatch on the specific error _type_.
+domain logic, by contrast, you generally dispatch on the specific error _type_.
 In short: an error's **kind** decides how the boundary treats it, while its
 **type** decides how your domain logic behaves.
 
 ## Defining custom error types
 
-Most errors in an application are either _domain errors_ or _infrastructure
-errors_, so Errata provides a dedicated module for each. Prefer these two when
-defining custom error types: they make the classification explicit and allow
-domain and infrastructure errors to be identified throughout the system.
+Most errors in an application are either domain errors or infrastructure errors,
+so Errata provides a dedicated module for each. Prefer these two when defining
+custom error types: they make the classification explicit and let domain and
+infrastructure errors be identified throughout the system.
 
 ```elixir
 defmodule MyApp.SomeContext.MyDomainError do
@@ -63,8 +129,8 @@ defmodule MyApp.SomeContext.MyInfrastructureError do
 end
 ```
 
-For the occasional error that fits neither category—such as an error
-originating in library code—use the base `Errata.Error` module, which creates
+For the occasional error that fits neither category — such as an error
+originating in library code — use the base `Errata.Error` module, which creates
 an error of kind `:general`:
 
 ```elixir
@@ -74,32 +140,26 @@ defmodule MyApp.SomeContext.MyError do
 end
 ```
 
-Each of these custom error types will define an exception struct that conforms
-to the `t:Errata.error/0` type and will implement the `Errata.Error` behaviour.
-Additionally, implementations for the `String.Chars` protocol and the
-`Jason.Encoder` protocol are provided so that these errors can be converted to
-string form or encoded as JSON automatically.
+Each `use` accepts a few options:
 
-## Raising Errata errors as exceptions
+  * `:default_message` — the `:message` to use when none is given
+  * `:default_reason` — the `:reason` to use when none is given
 
-Since Errata errors are just regular Elixir exceptions with a well-defined
-structure, they can be raised just like any other type of exception.
+Whichever module you use, the resulting error type is an exception struct that
+conforms to the `t:Errata.error/0` type, implements the `Errata.Error`
+behaviour, and provides `String.Chars` and `Jason.Encoder` implementations so
+that it can be rendered as a string or encoded as JSON automatically.
 
-```elixir
-raise MyApp.SomeContext.MyDomainError, reason: :invalid_data, context: %{foo: "bar"}
-```
+## Creating errors as return values
 
-## Using Errata errors as return values
+Returning an error as a value — preferably wrapped in an `{:error, error}`
+tuple — lets you create the error with full context at the site where it occurs,
+while leaving the _handling_ of the error to callers further up the stack. The
+error can then be logged or reported at a system boundary without losing any of
+its context.
 
-Errata errors can be created by using the `new/1` or `create/1` functions for
-the error type. Once created, they can be used as return values from functions,
-preferably wrapped in an error tuple. This approach allows for creating errors
-with full contextual details at the site of the error, while separating the
-handling of errors by letting them propagate up the call stack and logging
-or reporting the errors at the boundaries of the system.
-
-Using the `new/1` function creates an error with the provided data, but does
-not include any data in the `:env` field of the error struct:
+There are two ways to create an error. `new/1` builds an error from the given
+params but leaves the `:env` field `nil`:
 
 ```elixir
 iex> alias MyApp.SomeContext.MyError
@@ -107,10 +167,8 @@ iex> MyError.new(reason: :invalid_data, context: %{foo: "bar"})
 %MyError{reason: :invalid_data, context: %{foo: "bar"}, env: nil}
 ```
 
-Using the `create/1` macro, on the other hand, fills in the `:env` field of
-the error struct with information from the current `__ENV__` struct and
-the current stacktrace. To use the `create/1` macro, you must first
-`require/2` the error module:
+`create/1` additionally captures the current `__ENV__` and stacktrace into the
+`:env` field. Because it is a macro, the error module must be `require`d first:
 
 ```elixir
 iex> require MyApp.SomeContext.MyError, as: MyError
@@ -125,17 +183,17 @@ true
 
 > #### Prefer `create/1` to capture context {: .tip}
 >
-> Because `new/1` leaves the `:env` field as `nil`, it discards the module,
-> function, file, line, and stacktrace of the error's origin—often the most
+> Because `new/1` leaves the `:env` field `nil`, it discards the module,
+> function, file, line, and stacktrace of the error's origin — often the most
 > useful information when debugging or reporting an error. Prefer `create/1`
-> (or `Errata.create/2`, below) unless you have a specific reason not to
-> capture this context.
+> (or `Errata.create/2`, below) unless you have a specific reason not to capture
+> this context.
 
-The `create/1` macro requires `require/2`-ing each error module. As an
-alternative, the `Errata.create/2` macro creates an error of any type without a
-separate `require` for each one—handy when a module works with several error
-types. Since you typically already `require Errata` to use the custom guards,
-you can `alias` your error modules and call `Errata.create/2` directly:
+The `create/1` macro must be `require`d for each error module. As an
+alternative, the `Errata.create/2` macro creates an error of _any_ type without
+a separate `require` for each one — convenient when a module works with several
+error types. Since you typically already `require Errata` to use the custom
+guards, you can simply `alias` your error modules and call `Errata.create/2`:
 
 ```elixir
 iex> require Errata
@@ -147,69 +205,50 @@ iex> match?(%Errata.Env{}, error.env)
 true
 ```
 
-Whether `new/1` or `create/1` is used to create the error, it is preferable to
-wrap the error in a tuple when returning it as a value from functions:
+However the error is created, wrap it in a tuple when returning it from a
+function:
 
 ```elixir
 {:error, MyError.new(reason: :invalid_data)}
 {:error, MyError.create(reason: :invalid_data)}
 ```
 
-## Error types vs. the `:reason` field
+## Raising errors as exceptions
 
-Errata errors carry both a _type_ (the module) and an optional `:reason` atom,
-and it is not always obvious which to reach for. As a rule of thumb:
-
-- Use a **distinct error type** for each condition that callers may want to
-  handle differently or that has its own meaning in the domain. The type is the
-  primary identity of an error and the thing you pattern match on.
-- Use the **`:reason`** field to _sub-classify_ within a single error type—to
-  distinguish variations of the same error that share handling but differ in
-  cause.
-
-For example, a single `PaymentDeclined` domain error can use `:reason` to record
-why the payment was declined, rather than defining a separate type for each
-cause:
+Because Errata errors are ordinary Elixir exceptions, the same type can also be
+raised with `raise/2`, passing params as the second argument:
 
 ```elixir
-PaymentDeclined.create(reason: :insufficient_funds)
-PaymentDeclined.create(reason: :fraud_suspected)
+raise MyApp.SomeContext.MyDomainError, reason: :invalid_data, context: %{foo: "bar"}
 ```
 
-Conversely, a `:reason` that merely restates the type name (such as
-`UnknownSku.create(reason: :unknown_sku)`) adds no information and can be
-omitted.
+## Handling errors
 
-## Handling Errata errors
+Errata errors are standard Elixir exceptions, so they can be rescued like any
+other exception, and `Kernel.is_exception/1` returns `true` for them. In
+addition, Errata provides guards for recognizing and classifying its errors:
 
-Since error types defined using Errata are standard Elixir exceptions, they can
-be handled in the same way as any other exception. Specifically, they can be
-used in the `rescue` clause of a `try` block or function, and the
-`Kernel.is_exception/1` guard will always return `true` for them. Additionally,
-Errata provides custom guards for handling Errata error types specifically:
+- `Errata.is_error/1` — true for any Errata error
+- `Errata.is_domain_error/1` — true for domain errors
+- `Errata.is_infrastructure_error/1` — true for infrastructure errors
 
-- `Errata.is_error/1`
-- `Errata.is_domain_error/1`
-- `Errata.is_infrastructure_error/1`
+To use these guards, `import` or `require` the `Errata` module. The kind-based
+guards are especially useful at system boundaries — for example, translating
+domain errors into client errors (`4xx`) and infrastructure errors into server
+errors (`5xx`) with alerting — while domain logic generally matches on the
+specific error type.
 
-To use these custom guards, `import` or `require` the `Errata` module. The
-kind-based guards (`is_domain_error/1` and `is_infrastructure_error/1`) are
-especially useful at system boundaries—for example, translating domain errors
-into client errors (`4xx`) and infrastructure errors into server errors (`5xx`)
-with alerting—while domain logic generally matches on the specific error type.
-
-The following example demonstrates handling Errata errors both as raised
-exceptions and as error values returned from functions.
+The following example handles Errata errors both as raised exceptions and as
+error values returned from functions:
 
 > #### `rescue` clauses and the custom guards {: .info}
 >
 > Elixir's `rescue` clauses only accept a bare variable or the
 > `var in [ExceptionModule]` form; they do **not** accept arbitrary `when`
 > guards. To use the `Errata.is_error/1` family when rescuing, rescue the
-> exception into a variable and then dispatch on it (for example with
-> `cond/1`), as shown below. The guards _can_ be used directly in the `when`
-> clause of a `case`, `with`, or function head when handling errors returned
-> as values.
+> exception into a variable and then dispatch on it (for example with `cond/1`),
+> as shown below. The guards _can_ be used directly in the `when` clause of a
+> `case`, `with`, or function head when handling errors returned as values.
 
 ```elixir
 defmodule MyApp.SomeContext do
@@ -258,9 +297,8 @@ defmodule MyApp.SomeContext do
 end
 ```
 
-The following runnable examples demonstrate the two patterns above. When
-rescuing, the exception is bound to a variable and then dispatched on using the
-custom guards (a `when` guard cannot be used directly in a `rescue` clause):
+The patterns above, distilled into runnable examples — first, rescuing an
+exception and dispatching on it with the custom guards:
 
 ```elixir
 iex> require Errata
@@ -277,8 +315,8 @@ iex> try do
 {:errata, :boom}
 ```
 
-When handling errors returned as values, the custom guards _can_ be used
-directly in the `when` clause of a `case` (or `with`, or function head):
+And second, matching on an error returned as a value, where the guards _can_ be
+used directly in a `when` clause:
 
 ```elixir
 iex> require Errata
@@ -290,56 +328,75 @@ iex> case {:error, MyError.new(reason: :invalid_data)} do
 {:errata, :invalid_data}
 ```
 
-## Compared to traditional approaches to error handling
+### Rendering an error for users
 
-It is common practice in Elixir (and Erlang) to use error tuples of the form
-`{:error, reason}` as return values from functions to indicate an error
-condition. However, the `reason` value that is used as the second element
-in the tuple is often a simple value such as an atom or (worse) a string, and
-does not typically include sufficient context for interpreting the error.
-While these simple `reason` values are often sufficient for human readers of
-the code when viewed in context, they do not provide enough context to be
-interpreted by code or when viewed as log messages or error reports, where
-the context of where and when the error was originally detected and created
-is not readily apparent.
+`Exception.message/1` (and the `String.Chars` implementation) return a
+_developer-oriented_ message that combines the `:message` and `:reason` (for
+example, `"the requested order does not exist: :not_found"`) — useful in logs
+and raised-exception output. When rendering an error for an end user, use
+`Errata.display_message/1` instead, which returns just the human-readable
+`:message`.
 
-It is a less common but still widespread practice to raise exceptions for
-errors, instead of or in addition to returning error values from functions.
-Although exceptions do include some contextual information (including, in
-particular, a stacktrace), they lack a common, uniform structure that can be
-used for logging and error handling in general.
+## Choosing between an error type and a reason
 
-Errata, on the other hand, defines a uniform structure that all errors share,
-and allows errors to be created with full contextual details, including
-arbitrary context metadata. This full context is embedded into the error struct
-so that it propagates with the error, whether the error is raised as an
-exception or returned as an error value from a function. Errata errors are also
-JSON-encodable so that they can be easily published to external issue tracking
-systems such as Sentry, for example.
+Errata errors carry both a _type_ (the module) and an optional `:reason` atom,
+and it is not always obvious which to reach for. As a rule of thumb:
 
-Consider the common pattern pattern of using a `with` expression with a series
-of function calls, each of which is expected to return a tuple either of the
-form `{:ok, result}` or `{:error, reason}`. If the error `reason` does not
-contain sufficient contextual detail about the nature and cause of the error,
-then the `with` expression is forced to handle all possible error values in an
-`else` clause, in order to log or report the error in a meaningful way.
+- Use a **distinct error type** for each condition that callers may want to
+  handle differently or that has its own meaning in the domain. The type is the
+  primary identity of an error and the thing you pattern match on.
+- Use the **`:reason`** field to _sub-classify_ within a single error type — to
+  distinguish variations of the same error that share handling but differ in
+  cause.
 
-If, instead, the error `reason` for each error is a structured type with full
-context, the `with` expression can omit the `else` clause altogether and allow
-the error to propagate to callers. Since the error includes sufficient context
-it can be logged or reported to an issue tracking system at the boundaries,
-such as a Phoenix controller or a bounded context, without losing the context
-necessary for interpreting or debugging the error.
+For example, a single `PaymentDeclined` domain error can use `:reason` to record
+why the payment was declined, rather than defining a separate type for each
+cause:
 
-Chris Keathley provides an in-depth discussion of this point in his blog post
-[Good and Bad Elixir](https://keathley.io/blog/good-and-bad-elixir.html), in
-the section "Avoid `else` in `with` blocks".
+```elixir
+PaymentDeclined.create(reason: :insufficient_funds)
+PaymentDeclined.create(reason: :fraud_suspected)
+```
+
+Conversely, a `:reason` that merely restates the type name (such as
+`UnknownSku.create(reason: :unknown_sku)`) adds no information and can be
+omitted.
+
+## Why Errata?
+
+It is common in Elixir and Erlang to signal failure with an error tuple of the
+form `{:error, reason}`. All too often, though, the `reason` is a bare atom or
+(worse) a string that carries no context: it may read clearly enough in the
+surrounding code, but as a log message or error report — far from where the
+error arose — it lacks the detail needed to interpret what actually happened.
+
+Raising exceptions is a less common but still widespread alternative. Exceptions
+do carry some context, including a stacktrace, but they lack a common, uniform
+structure to build logging and error handling around.
+
+Errata gives all errors a uniform structure and lets them be created with full
+contextual detail, including arbitrary metadata. That context is embedded in the
+error struct, so it propagates with the error whether the error is raised or
+returned as a value, and the error is JSON-encodable so it can be reported to an
+external service such as Sentry.
+
+This pays off, in particular, in `with` expressions. When each step returns
+`{:ok, result}` or `{:error, reason}` and the `reason` lacks context, the `with`
+is forced to add an `else` clause to log or report every possible error
+meaningfully. When each error is instead a structured type carrying its own
+context, the `with` can omit the `else` clause entirely and let the error
+propagate to a boundary — such as a Phoenix controller — where it is logged or
+reported without any loss of the context needed to interpret it.
+
+Chris Keathley discusses this point in depth in his blog post
+[Good and Bad Elixir](https://keathley.io/blog/good-and-bad-elixir.html), under
+"Avoid `else` in `with` blocks".
 
 <!-- README END -->
 
 ## Installation
 
-`errata` can be installed by adding it to your list of dependencies in `mix.exs`:
+Add `errata` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -350,5 +407,4 @@ end
 ```
 
 Documentation is generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm/errata/index.html) and be found at
-<https://hexdocs.pm/errata/index.html>.
+and published on [HexDocs](https://hexdocs.pm/errata/index.html).
