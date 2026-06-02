@@ -95,4 +95,38 @@ defmodule Errata do
   defguard is_infrastructure_error(term)
            when is_error(term) and
                   :erlang.map_get(:kind, term) == :infrastructure
+
+  @doc """
+  Creates an error of the given `error_module`, capturing the current `__ENV__`
+  and stacktrace into the `:env` field.
+
+  This is a convenience equivalent to the per-module `c:Errata.Error.create/1`
+  macro, but it lives on the `Errata` module. Because you typically already
+  `require Errata` (to use the guards above), you can `alias` your error modules
+  and call `Errata.create/2` for any of them without a separate `require` for
+  each error type:
+
+      defmodule MyApp.SomeContext do
+        require Errata
+        alias MyApp.SomeContext.{UnknownThing, ThingConflict}
+
+        def fetch(id) do
+          {:error, Errata.create(UnknownThing, reason: :not_found, context: %{id: id})}
+        end
+      end
+
+  Compare to the per-module macro, which requires a `require` for every error
+  type used in the module:
+
+      require MyApp.SomeContext.UnknownThing, as: UnknownThing
+      require MyApp.SomeContext.ThingConflict, as: ThingConflict
+  """
+  defmacro create(error_module, params \\ Macro.escape(%{})) do
+    quote do
+      {:current_stacktrace, [_process_info_call | stacktrace]} =
+        Process.info(self(), :current_stacktrace)
+
+      Errata.Errors.create(unquote(error_module), unquote(params), __ENV__, stacktrace)
+    end
+  end
 end

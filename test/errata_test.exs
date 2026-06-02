@@ -153,4 +153,30 @@ defmodule ErrataTest do
       end
     end
   end
+
+  describe "create/2" do
+    # Note: only `require Errata`/`import Errata` is needed here (already done
+    # above) — no `require TestDomainError`. That is the point of this macro.
+    test "builds the error, sets params, and captures the current env" do
+      error = create(TestDomainError, reason: :boom, context: %{a: 1})
+
+      assert is_domain_error(error)
+      assert error.reason == :boom
+      assert error.context == %{a: 1}
+
+      assert %Errata.Env{module: module, function: _, line: line, stacktrace: stacktrace} =
+               error.env
+
+      assert module == __MODULE__
+      assert is_integer(line)
+      assert is_list(stacktrace)
+    end
+
+    test "works with no params" do
+      error = create(TestGeneralError)
+
+      assert is_error(error)
+      assert %Errata.Env{module: __MODULE__} = error.env
+    end
+  end
 end
