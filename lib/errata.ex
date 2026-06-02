@@ -26,6 +26,7 @@ defmodule Errata do
           message: String.t() | nil,
           reason: atom() | nil,
           context: map() | nil,
+          cause: Errata.Cause.t() | nil,
           env: Errata.Env.t()
         }
 
@@ -40,6 +41,7 @@ defmodule Errata do
           message: String.t() | nil,
           reason: atom() | nil,
           context: map() | nil,
+          cause: Errata.Cause.t() | nil,
           env: Errata.Env.t() | nil
         }
 
@@ -54,6 +56,7 @@ defmodule Errata do
           message: String.t() | nil,
           reason: atom() | nil,
           context: map() | nil,
+          cause: Errata.Cause.t() | nil,
           env: Errata.Env.t() | nil
         }
 
@@ -76,6 +79,7 @@ defmodule Errata do
                   is_map_key(term, :message) and
                   is_map_key(term, :reason) and
                   is_map_key(term, :context) and
+                  is_map_key(term, :cause) and
                   is_map_key(term, :env)
 
   @doc """
@@ -183,5 +187,104 @@ defmodule Errata do
 
   def display_message(other) do
     raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Returns the immediate cause wrapped by `error`, or `nil` if it has none.
+
+  The cause is the original error, exception, or value that was wrapped when the
+  error was created (typically via the generated `c:Errata.Error.wrap/2` macro,
+  or by passing a `:cause` to `c:Errata.Error.new/1` or `c:Errata.Error.create/1`).
+  This returns the bare wrapped value; the captured stacktrace (if any) is held
+  in the error's `:cause` field as an `Errata.Cause` struct.
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> require OrderNotFound
+      iex> original = %RuntimeError{message: "boom"}
+      iex> error = OrderNotFound.wrap(original, reason: :lookup_failed)
+      iex> Errata.cause(error)
+      %RuntimeError{message: "boom"}
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> Errata.cause(OrderNotFound.new(reason: :not_found))
+      nil
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec cause(error()) :: term() | nil
+  def cause(error) when is_error(error) do
+    case error.cause do
+      %Errata.Cause{value: value} -> value
+      nil -> nil
+    end
+  end
+
+  def cause(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Walks the cause chain of `error` and returns the deepest (root) cause, or `nil`
+  if `error` has no cause.
+
+  When a wrapped cause is itself an Errata error carrying its own cause, the
+  chain is followed to the bottom.
+
+      iex> alias MyApp.Orders.{OrderNotFound, PaymentDeclined}
+      iex> require OrderNotFound
+      iex> require PaymentDeclined
+      iex> root = %RuntimeError{message: "db down"}
+      iex> inner = OrderNotFound.wrap(root, reason: :lookup_failed)
+      iex> outer = PaymentDeclined.wrap(inner, reason: :declined)
+      iex> Errata.root_cause(outer)
+      %RuntimeError{message: "db down"}
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec root_cause(error()) :: term() | nil
+  def root_cause(error) when is_error(error) do
+    case cause(error) do
+      nil -> nil
+      value -> if is_error(value), do: root_cause(value) || value, else: value
+    end
+  end
+
+  def root_cause(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Renders `error` and its full cause chain as a multi-line string for logging.
+
+  The head is the error's own developer-oriented message (as returned by
+  `Exception.message/1`), followed by a `Caused by:` line for each wrapped cause.
+  Wrapped Errata errors recurse into their own chain; other wrapped values are
+  rendered via `Exception.format/3`, including the captured stacktrace when one
+  is present.
+
+  Unlike `Exception.message/1`, which is kept clean and reports only the error's
+  own message, this includes the entire chain — use it where you want the
+  underlying context surfaced, such as a log entry.
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec format_chain(error()) :: String.t()
+  def format_chain(error) when is_error(error) do
+    head = "#{inspect(error.__struct__)}: #{Exception.message(error)}"
+
+    case error.cause do
+      nil -> head
+      %Errata.Cause{} = cause -> head <> "\nCaused by: " <> format_cause(cause)
+    end
+  end
+
+  def format_chain(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  defp format_cause(%Errata.Cause{value: value}) when is_error(value), do: format_chain(value)
+
+  defp format_cause(%Errata.Cause{kind: kind, value: value, stacktrace: stacktrace}) do
+    Exception.format(kind, value, stacktrace || [])
   end
 end

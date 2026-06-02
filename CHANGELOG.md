@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [0.10.0]
+
+### Added
+- Error wrapping (chaining): error types can now carry a `:cause` — the original
+  error, exception, or value that led to them — without losing the context of
+  the underlying failure.
+  - A generated `wrap/1,2` macro on each error module wraps a caught error as the
+    `:cause` of a new error, capturing the current `__ENV__` (like `create/1`)
+    and, when given `stacktrace: __STACKTRACE__`, the original error's stacktrace.
+  - `new/1`, `create/1`, and `raise/2` now also accept a `:cause` param.
+  - The cause is stored as an `Errata.Cause` struct (`kind`/`value`/`stacktrace`).
+  - `Errata.cause/1` returns the immediate cause; `Errata.root_cause/1` walks the
+    chain to the deepest cause; `Errata.format_chain/1` renders the full
+    `Caused by:` chain for logging.
+  - `to_map/1` (and JSON) now include the cause, recursing into wrapped Errata
+    errors and rendering standard exceptions by type and message.
+
 ## [0.9.0] - 2026-06-02
 
 ### Added

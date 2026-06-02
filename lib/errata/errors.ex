@@ -7,22 +7,44 @@ defmodule Errata.Errors do
 
   # The only keys callers are allowed to set when creating an error. Internal
   # fields (`:kind`, `:env`, `:__errata_error__`) are managed by Errata itself.
-  @allowed_param_keys [:message, :reason, :context]
+  @allowed_param_keys [:message, :reason, :context, :cause]
 
   @doc false
   @spec create(module() | struct(), Errata.Error.params()) :: Errata.Error.t()
   def create(error_type, params) do
-    struct(error_type, validate_params!(params))
+    error_type
+    |> struct(validate_params!(params))
+    |> normalize_cause()
   end
 
   @doc false
   @spec create(module() | struct(), Errata.Error.params(), Macro.Env.t(), Exception.stacktrace()) ::
           Errata.error()
   def create(error_type, params, %Macro.Env{} = env, stacktrace) do
-    error = struct(error_type, validate_params!(params))
+    error =
+      error_type
+      |> struct(validate_params!(params))
+      |> normalize_cause()
 
     %{error | env: Errata.Env.new(env, stacktrace)}
   end
+
+  @doc false
+  @spec wrap(module(), term(), Errata.Error.params(), Macro.Env.t(), Exception.stacktrace()) ::
+          Errata.error()
+  def wrap(error_type, cause, opts, %Macro.Env{} = env, stacktrace) do
+    {cause_opts, params} = opts |> Enum.to_list() |> Keyword.split([:kind, :stacktrace])
+    params = Keyword.put(params, :cause, Errata.Cause.new(cause, cause_opts))
+
+    create(error_type, params, env, stacktrace)
+  end
+
+  # The `:cause` param may be given as a raw value (e.g. via `new(cause: ...)`);
+  # normalize it into an `Errata.Cause` struct. A `nil` cause means "no cause".
+  defp normalize_cause(%{cause: nil} = error), do: error
+  defp normalize_cause(%{cause: %Errata.Cause{}} = error), do: error
+  defp normalize_cause(%{cause: value} = error), do: %{error | cause: Errata.Cause.new(value)}
+  defp normalize_cause(error), do: error
 
   # Reject unknown/misspelled param keys instead of silently dropping them
   # (which `struct/2` would do). Returns the params unchanged when valid.
@@ -51,9 +73,26 @@ defmodule Errata.Errors do
       error_type: inspect(error_type),
       reason: error.reason,
       message: error.message,
+      cause: cause_map(error.cause),
       env: Errata.Env.to_map(error.env),
       context: context_map(error)
     }
+  end
+
+  # Render the wrapped cause for serialization. Errata errors recurse into their
+  # full structured map; standard exceptions are rendered by type and message;
+  # any other term is kept if JSON-encodable and otherwise `inspect`'d. The
+  # cause's stacktrace is intentionally omitted, mirroring `Errata.Env.to_map/1`.
+  defp cause_map(nil), do: nil
+  defp cause_map(%Errata.Cause{value: value}), do: cause_value_map(value)
+
+  defp cause_value_map(value) when is_error(value), do: to_map(value)
+
+  defp cause_value_map(%mod{} = value) when is_exception(value),
+    do: %{error_type: inspect(mod), message: Exception.message(value)}
+
+  defp cause_value_map(value) do
+    if Errata.JSON.encodable?(value), do: value, else: inspect(value)
   end
 
   @doc false
@@ -144,6 +183,7 @@ defmodule Errata.Errors do
                    message: unquote(default_message),
                    reason: unquote(default_reason),
                    context: nil,
+                   cause: nil,
                    env: nil
 
       @impl Exception
@@ -186,6 +226,36 @@ defmodule Errata.Errors do
             Process.info(self(), :current_stacktrace)
 
           Errata.Errors.create(unquote(__module__), unquote(params), __ENV__, stacktrace)
+        end
+      end
+
+      @impl Errata.Error
+      defmacro wrap(cause) do
+        __module__ = @__errata_error_module__
+
+        quote do
+          {:current_stacktrace, [_process_info_call | stacktrace]} =
+            Process.info(self(), :current_stacktrace)
+
+          Errata.Errors.wrap(unquote(__module__), unquote(cause), [], __ENV__, stacktrace)
+        end
+      end
+
+      @impl Errata.Error
+      defmacro wrap(cause, opts) do
+        __module__ = @__errata_error_module__
+
+        quote do
+          {:current_stacktrace, [_process_info_call | stacktrace]} =
+            Process.info(self(), :current_stacktrace)
+
+          Errata.Errors.wrap(
+            unquote(__module__),
+            unquote(cause),
+            unquote(opts),
+            __ENV__,
+            stacktrace
+          )
         end
       end
 

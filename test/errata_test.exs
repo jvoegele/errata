@@ -198,6 +198,83 @@ defmodule ErrataTest do
     end
   end
 
+  describe "cause/1 and root_cause/1" do
+    require MyApp.Orders.OrderNotFound, as: OrderNotFound
+    require MyApp.Orders.PaymentDeclined, as: PaymentDeclined
+
+    test "cause/1 returns the immediate wrapped value" do
+      original = %RuntimeError{message: "boom"}
+      error = OrderNotFound.wrap(original, reason: :lookup_failed)
+
+      assert Errata.cause(error) == original
+    end
+
+    test "cause/1 returns nil when there is no cause" do
+      assert Errata.cause(OrderNotFound.new()) == nil
+    end
+
+    test "root_cause/1 walks to the deepest cause through nested Errata errors" do
+      root = %RuntimeError{message: "db down"}
+      inner = OrderNotFound.wrap(root, reason: :lookup_failed)
+      outer = PaymentDeclined.wrap(inner, reason: :declined)
+
+      assert Errata.cause(outer) == inner
+      assert Errata.root_cause(outer) == root
+    end
+
+    test "root_cause/1 returns the immediate cause when it is already the deepest" do
+      error = OrderNotFound.wrap(%RuntimeError{message: "x"}, reason: :a)
+      assert Errata.root_cause(error) == %RuntimeError{message: "x"}
+    end
+
+    test "raise ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.cause(:nope) end
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.root_cause(:nope) end
+    end
+  end
+
+  describe "format_chain/1" do
+    require MyApp.Orders.OrderNotFound, as: OrderNotFound
+    require MyApp.Orders.PaymentDeclined, as: PaymentDeclined
+
+    test "renders only the head when there is no cause" do
+      error = OrderNotFound.new(reason: :not_found)
+
+      assert Errata.format_chain(error) ==
+               "MyApp.Orders.OrderNotFound: the requested order does not exist: :not_found"
+    end
+
+    test "renders a Caused by line for a wrapped exception" do
+      error = OrderNotFound.wrap(%RuntimeError{message: "boom"}, reason: :lookup_failed)
+      chain = Errata.format_chain(error)
+
+      assert chain =~
+               "MyApp.Orders.OrderNotFound: the requested order does not exist: :lookup_failed"
+
+      assert chain =~ "Caused by: ** (RuntimeError) boom"
+    end
+
+    test "recurses through nested Errata causes" do
+      root = %RuntimeError{message: "db down"}
+      inner = OrderNotFound.wrap(root, reason: :lookup_failed)
+      outer = PaymentDeclined.wrap(inner, reason: :declined)
+      chain = Errata.format_chain(outer)
+
+      assert chain =~ "MyApp.Orders.PaymentDeclined: the payment was declined: :declined"
+
+      assert chain =~
+               "Caused by: MyApp.Orders.OrderNotFound: the requested order does not exist: :lookup_failed"
+
+      assert chain =~ "Caused by: ** (RuntimeError) db down"
+    end
+
+    test "raises ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn ->
+        Errata.format_chain(:nope)
+      end
+    end
+  end
+
   describe "display_message/1" do
     test "returns the bare :message, without the reason suffix" do
       error = TestDomainError.new(message: "human readable", reason: :some_reason)
