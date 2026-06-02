@@ -129,4 +129,32 @@ defmodule Errata do
       Errata.Errors.create(unquote(error_module), unquote(params), __ENV__, stacktrace)
     end
   end
+
+  @doc """
+  Converts any Errata error to a plain, JSON-encodable map.
+
+  This is the generic counterpart to the per-type `c:Errata.Error.to_map/1`
+  callback: it works on _any_ value for which `is_error/1` returns `true`,
+  without needing to know the error's specific module. This is convenient at
+  system boundaries (such as a Phoenix fallback controller) where errors of
+  many different types are handled uniformly.
+
+      iex> alias MyApp.SomeContext.MyError
+      iex> error = MyError.new(reason: :invalid_data, context: %{foo: "bar"})
+      iex> map = Errata.to_map(error)
+      iex> map.error_type
+      MyApp.SomeContext.MyError
+      iex> map.reason
+      :invalid_data
+      iex> map.context
+      %{foo: "bar"}
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec to_map(error()) :: map()
+  def to_map(error) when is_error(error), do: Errata.Errors.to_map(error)
+
+  def to_map(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
 end

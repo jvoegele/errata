@@ -1,7 +1,9 @@
 defmodule Errata.Errors do
   @moduledoc false
 
-  import Errata
+  # Import only the guard we use; a bare `import Errata` would also pull in
+  # `Errata.to_map/1`, which conflicts with this module's local `to_map/1`.
+  import Errata, only: [is_error: 1]
 
   # The only keys callers are allowed to set when creating an error. Internal
   # fields (`:kind`, `:env`, `:__errata_error__`) are managed by Errata itself.

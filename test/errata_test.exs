@@ -179,4 +179,27 @@ defmodule ErrataTest do
       assert %Errata.Env{module: __MODULE__} = error.env
     end
   end
+
+  describe "to_map/1" do
+    test "converts any Errata error to a map without knowing its module" do
+      error = TestDomainError.new(reason: :boom, context: %{a: 1})
+      map = Errata.to_map(error)
+
+      assert map.error_type == TestDomainError
+      assert map.reason == :boom
+      assert map.context == %{a: 1}
+      # matches the per-module callback for the same error
+      assert map == TestDomainError.to_map(error)
+    end
+
+    test "raises ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn ->
+        Errata.to_map(%RuntimeError{})
+      end
+
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn ->
+        Errata.to_map(:not_an_error)
+      end
+    end
+  end
 end
