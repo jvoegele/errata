@@ -22,12 +22,10 @@ defmodule Errata.ErrorTest do
   end
 
   describe "new/1" do
-    test "uses default values" do
-      error = TestError.new(unrecognized: "ignore me")
-      assert error.message == "this is only a test"
-      assert error.reason == :testing_123
-      refute error.context
-      refute error.env
+    test "raises ArgumentError on unrecognized param keys" do
+      assert_raise ArgumentError, ~r/invalid param key\(s\).*:unrecognized/, fn ->
+        TestError.new(unrecognized: "ignore me")
+      end
     end
 
     test "overrides default reason" do
@@ -64,13 +62,10 @@ defmodule Errata.ErrorTest do
   end
 
   describe "create/1" do
-    test "uses default values" do
-      error = TestError.create(unrecognized: "ignore me")
-      assert error.message == "this is only a test"
-      assert error.reason == :testing_123
-      refute error.context
-
-      assert %{module: _, function: _, file: _, line: _} = error.env
+    test "raises ArgumentError on unrecognized param keys" do
+      assert_raise ArgumentError, ~r/invalid param key\(s\).*:unrecognized/, fn ->
+        TestError.create(unrecognized: "ignore me")
+      end
     end
 
     test "overrides default reason" do
