@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   current env, without a separate `require` for each error module. (#4)
 - `Errata.to_map/1` to convert any Errata error to a plain, JSON-encodable map
   without needing to know the error's specific module. (#5)
+- `Errata.display_message/1` to retrieve the bare, human-readable `:message` of
+  an error (without the `:reason` suffix that `Exception.message/1` appends),
+  for rendering errors to end users. (#7)
 
 ### Changed
 - **Breaking:** `new/1`, `create/1`, and `raise/2` now raise an `ArgumentError`

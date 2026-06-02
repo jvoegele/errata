@@ -11,6 +11,13 @@ defmodule Errata.Error do
       matching or classifying the error
     * `context` - a map containing arbitrary contextual information or metadata about the error
 
+  Note the distinction between two ways of rendering an error as a string.
+  `Exception.message/1` (and the `String.Chars` implementation) return a
+  _developer-oriented_ message that combines `message` and `reason` (for
+  example, `"could not place the order: :empty_cart"`) — useful in logs and
+  raised-exception output. `Errata.display_message/1` returns just the
+  human-readable `message`, intended for rendering to end users.
+
   Because these error types are defined with `defexception/1`, they can be raised as exceptions
   with `raise/2`. However, because they implement the `Errata.Error` behaviour, it is also
   possible to create instances of these error structs using the generated implementations of

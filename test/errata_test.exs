@@ -203,4 +203,24 @@ defmodule ErrataTest do
       end
     end
   end
+
+  describe "display_message/1" do
+    test "returns the bare :message, without the reason suffix" do
+      error = TestDomainError.new(message: "human readable", reason: :some_reason)
+
+      assert Errata.display_message(error) == "human readable"
+      # contrast with the developer-oriented Exception.message/1
+      assert Exception.message(error) == "human readable: :some_reason"
+    end
+
+    test "returns nil when no message was set" do
+      assert Errata.display_message(TestDomainError.new(reason: :some_reason)) == nil
+    end
+
+    test "raises ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn ->
+        Errata.display_message(:not_an_error)
+      end
+    end
+  end
 end

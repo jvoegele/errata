@@ -157,4 +157,31 @@ defmodule Errata do
   def to_map(other) do
     raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
   end
+
+  @doc """
+  Returns the human-readable _display message_ for an error: the value of its
+  `:message` field, or `nil` if none was set.
+
+  This is distinct from `Exception.message/1` (and the `String.Chars`
+  implementation), which return a _developer-oriented_ message that also
+  includes the `:reason` — useful in logs and raised-exception output, but not
+  intended for end users. Use `display_message/1` when rendering an error for a
+  user (for example, the body of a `4xx` HTTP response), supplying your own
+  fallback for the `nil` case.
+
+      iex> alias MyApp.SomeContext.MyError
+      iex> error = MyError.new(message: "could not place the order", reason: :empty_cart)
+      iex> Errata.display_message(error)
+      "could not place the order"
+      iex> Exception.message(error)
+      "could not place the order: :empty_cart"
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec display_message(error()) :: String.t() | nil
+  def display_message(error) when is_error(error), do: error.message
+
+  def display_message(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
 end
