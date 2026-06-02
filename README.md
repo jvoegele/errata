@@ -401,7 +401,7 @@ Add `errata` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:errata, "~> 0.8.1"}
+    {:errata, "~> 0.9.0"}
   ]
 end
 ```
