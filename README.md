@@ -128,6 +128,16 @@ To use these custom guards, `import` or `require` the `Errata` module.
 The following example demonstrates handling Errata errors both as raised
 exceptions and as error values returned from functions.
 
+> #### `rescue` clauses and the custom guards {: .info}
+>
+> Elixir's `rescue` clauses only accept a bare variable or the
+> `var in [ExceptionModule]` form; they do **not** accept arbitrary `when`
+> guards. To use the `Errata.is_error/1` family when rescuing, rescue the
+> exception into a variable and then dispatch on it (for example with
+> `cond/1`), as shown below. The guards _can_ be used directly in the `when`
+> clause of a `case`, `with`, or function head when handling errors returned
+> as values.
+
 ```elixir
 defmodule MyApp.SomeContext do
   # require the Errata module to use the custom guards
@@ -141,14 +151,15 @@ defmodule MyApp.SomeContext do
         # Errata errors can be rescued by their specific type
         handle_my_domain_error(e)
 
-      e when Errata.is_error(e) ->
-        # Or they can be rescued using one of the custom guards defined in the
-        # Errata module
-        handle_errata_error(e)
-
       e ->
-        # Regular exceptions may be handled separately if desired
-        handle_other_error(e)
+        # `rescue` clauses cannot use `when` guards, so rescue the exception
+        # and then dispatch on it using the custom guards defined in the
+        # Errata module
+        cond do
+          Errata.is_error(e) -> handle_errata_error(e)
+          # Regular exceptions may be handled separately if desired
+          true -> handle_other_error(e)
+        end
     end
   end
 
@@ -163,8 +174,8 @@ defmodule MyApp.SomeContext do
 
       {:error, error} when Errata.is_error(error) ->
         # Or they can be identified using one of the custom guards defined in
-        # the Errata module
-        handle_errata_error(e)
+        # the Errata module (`when` guards are allowed in `case` clauses)
+        handle_errata_error(error)
 
       {:error, reason} ->
         # Other errors may be handled separately if desired
@@ -172,6 +183,38 @@ defmodule MyApp.SomeContext do
     end
   end
 end
+```
+
+The following runnable examples demonstrate the two patterns above. When
+rescuing, the exception is bound to a variable and then dispatched on using the
+custom guards (a `when` guard cannot be used directly in a `rescue` clause):
+
+```elixir
+iex> require Errata
+iex> alias MyApp.SomeContext.{MyDomainError, MyError}
+iex> try do
+...>   raise MyError, reason: :boom
+...> rescue
+...>   e in [MyDomainError] ->
+...>     {:specific, e.reason}
+...>
+...>   e ->
+...>     if Errata.is_error(e), do: {:errata, e.reason}, else: {:other, e}
+...> end
+{:errata, :boom}
+```
+
+When handling errors returned as values, the custom guards _can_ be used
+directly in the `when` clause of a `case` (or `with`, or function head):
+
+```elixir
+iex> require Errata
+iex> alias MyApp.SomeContext.MyError
+iex> case {:error, MyError.new(reason: :invalid_data)} do
+...>   {:error, e} when Errata.is_error(e) -> {:errata, e.reason}
+...>   {:error, other} -> {:other, other}
+...> end
+{:errata, :invalid_data}
 ```
 
 ## Compared to traditional approaches to error handling

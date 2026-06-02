@@ -70,7 +70,7 @@ defmodule Errata.Error do
         require MyApp.SomeError, as: SomeError
 
         def some_function!(arg) do
-          raise SomeError reason: :helpful_tag, context: %{arbitrary: "metadata", arg: arg}
+          raise SomeError, reason: :helpful_tag, context: %{arbitrary: "metadata", arg: arg}
         end
       end
 
