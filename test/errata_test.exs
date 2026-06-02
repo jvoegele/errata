@@ -1,17 +1,11 @@
-# The three modules defined below are declared here to support doctests in the README.md file
-defmodule MyApp.SomeContext.MyDomainError do
-  # Define a custom domain error in some context.
-  use Errata.DomainError
+# The modules below back the running example used in the doctests in README.md
+# (which becomes the `Errata` moduledoc).
+defmodule MyApp.Orders.OrderNotFound do
+  use Errata.DomainError, default_message: "the requested order does not exist"
 end
 
-defmodule MyApp.SomeContext.MyInfrastructureError do
-  # Define a custom infrastructure error in some context.
-  use Errata.InfrastructureError
-end
-
-defmodule MyApp.SomeContext.MyError do
-  # Define a custom error in some context.
-  use Errata.Error
+defmodule MyApp.Orders.PaymentDeclined do
+  use Errata.DomainError, default_message: "the payment was declined"
 end
 
 defmodule ErrataTest do

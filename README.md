@@ -118,12 +118,12 @@ custom error types: they make the classification explicit and let domain and
 infrastructure errors be identified throughout the system.
 
 ```elixir
-defmodule MyApp.SomeContext.MyDomainError do
+defmodule MyApp.Orders.PaymentDeclined do
   # A business-rule violation or other error within the problem domain.
   use Errata.DomainError
 end
 
-defmodule MyApp.SomeContext.MyInfrastructureError do
+defmodule MyApp.Orders.PaymentGatewayTimeout do
   # A network timeout, database failure, or other infrastructure-level error.
   use Errata.InfrastructureError
 end
@@ -134,7 +134,7 @@ originating in library code — use the base `Errata.Error` module, which create
 an error of kind `:general`:
 
 ```elixir
-defmodule MyApp.SomeContext.MyError do
+defmodule MyApp.UnexpectedError do
   # An error that is neither a domain nor an infrastructure error.
   use Errata.Error
 end
@@ -162,20 +162,20 @@ There are two ways to create an error. `new/1` builds an error from the given
 params but leaves the `:env` field `nil`:
 
 ```elixir
-iex> alias MyApp.SomeContext.MyError
-iex> MyError.new(reason: :invalid_data, context: %{foo: "bar"})
-%MyError{reason: :invalid_data, context: %{foo: "bar"}, env: nil}
+iex> alias MyApp.Orders.OrderNotFound
+iex> OrderNotFound.new(reason: :not_found, context: %{order_id: 42})
+%OrderNotFound{reason: :not_found, context: %{order_id: 42}, env: nil}
 ```
 
 `create/1` additionally captures the current `__ENV__` and stacktrace into the
 `:env` field. Because it is a macro, the error module must be `require`d first:
 
 ```elixir
-iex> require MyApp.SomeContext.MyError, as: MyError
-iex> error = MyError.create(reason: :invalid_data, context: %{foo: "bar"})
-iex> error.reason == :invalid_data
+iex> require MyApp.Orders.OrderNotFound, as: OrderNotFound
+iex> error = OrderNotFound.create(reason: :not_found, context: %{order_id: 42})
+iex> error.reason == :not_found
 true
-iex> error.context == %{foo: "bar"}
+iex> error.context == %{order_id: 42}
 true
 iex> match?(%Errata.Env{stacktrace: stacktrace} when is_list(stacktrace), error.env)
 true
@@ -197,10 +197,10 @@ guards, you can simply `alias` your error modules and call `Errata.create/2`:
 
 ```elixir
 iex> require Errata
-iex> alias MyApp.SomeContext.MyError
-iex> error = Errata.create(MyError, reason: :invalid_data)
+iex> alias MyApp.Orders.OrderNotFound
+iex> error = Errata.create(OrderNotFound, reason: :not_found)
 iex> error.reason
-:invalid_data
+:not_found
 iex> match?(%Errata.Env{}, error.env)
 true
 ```
@@ -209,8 +209,8 @@ However the error is created, wrap it in a tuple when returning it from a
 function:
 
 ```elixir
-{:error, MyError.new(reason: :invalid_data)}
-{:error, MyError.create(reason: :invalid_data)}
+{:error, OrderNotFound.new(reason: :not_found)}
+{:error, OrderNotFound.create(reason: :not_found)}
 ```
 
 ## Raising errors as exceptions
@@ -219,7 +219,7 @@ Because Errata errors are ordinary Elixir exceptions, the same type can also be
 raised with `raise/2`, passing params as the second argument:
 
 ```elixir
-raise MyApp.SomeContext.MyDomainError, reason: :invalid_data, context: %{foo: "bar"}
+raise MyApp.Orders.OrderNotFound, reason: :not_found, context: %{order_id: 42}
 ```
 
 ## Handling errors
@@ -251,17 +251,17 @@ error values returned from functions:
 > `case`, `with`, or function head when handling errors returned as values.
 
 ```elixir
-defmodule MyApp.SomeContext do
+defmodule MyApp.Orders.Boundary do
   # require the Errata module to use the custom guards
   require Errata
 
-  def handle_errata_error_as_exception do
+  def handle_order_lookup_as_exception(id) do
     try do
-      function_that_raises_errata_error!()
+      MyApp.Orders.fetch_order!(id)
     rescue
-      e in [MyApp.SomeContext.MyDomainError] ->
+      e in [MyApp.Orders.OrderNotFound] ->
         # Errata errors can be rescued by their specific type
-        handle_my_domain_error(e)
+        handle_order_not_found(e)
 
       e ->
         # `rescue` clauses cannot use `when` guards, so rescue the exception
@@ -275,14 +275,14 @@ defmodule MyApp.SomeContext do
     end
   end
 
-  def handle_errata_error_as_value do
-    case function_that_returns_errata_error_as_value() do
-      {:ok, result} ->
-        handle_ok_result(result)
+  def handle_order_lookup_as_value(id) do
+    case MyApp.Orders.fetch_order(id) do
+      {:ok, order} ->
+        handle_order(order)
 
-      {:error, %MyApp.SomeContext.MyDomainError{} = error} ->
+      {:error, %MyApp.Orders.OrderNotFound{} = error} ->
         # Errata errors can be pattern matched by their specific type
-        handle_my_domain_error(error)
+        handle_order_not_found(error)
 
       {:error, error} when Errata.is_error(error) ->
         # Or they can be identified using one of the custom guards defined in
@@ -302,17 +302,17 @@ exception and dispatching on it with the custom guards:
 
 ```elixir
 iex> require Errata
-iex> alias MyApp.SomeContext.{MyDomainError, MyError}
+iex> alias MyApp.Orders.{OrderNotFound, PaymentDeclined}
 iex> try do
-...>   raise MyError, reason: :boom
+...>   raise OrderNotFound, reason: :not_found
 ...> rescue
-...>   e in [MyDomainError] ->
+...>   e in [PaymentDeclined] ->
 ...>     {:specific, e.reason}
 ...>
 ...>   e ->
 ...>     if Errata.is_error(e), do: {:errata, e.reason}, else: {:other, e}
 ...> end
-{:errata, :boom}
+{:errata, :not_found}
 ```
 
 And second, matching on an error returned as a value, where the guards _can_ be
@@ -320,12 +320,12 @@ used directly in a `when` clause:
 
 ```elixir
 iex> require Errata
-iex> alias MyApp.SomeContext.MyError
-iex> case {:error, MyError.new(reason: :invalid_data)} do
+iex> alias MyApp.Orders.OrderNotFound
+iex> case {:error, OrderNotFound.new(reason: :not_found)} do
 ...>   {:error, e} when Errata.is_error(e) -> {:errata, e.reason}
 ...>   {:error, other} -> {:other, other}
 ...> end
-{:errata, :invalid_data}
+{:errata, :not_found}
 ```
 
 ### Rendering an error for users
@@ -359,7 +359,7 @@ PaymentDeclined.create(reason: :fraud_suspected)
 ```
 
 Conversely, a `:reason` that merely restates the type name (such as
-`UnknownSku.create(reason: :unknown_sku)`) adds no information and can be
+`OrderNotFound.create(reason: :order_not_found)`) adds no information and can be
 omitted.
 
 ## Why Errata?

@@ -17,9 +17,9 @@ defmodule Errata.InfrastructureError do
   To define a new custom infrastructure error type, `use/2` the `Errata.InfrastructureError`
   module in your own error module:
 
-      defmodule MyApp.SomeContext.SomeError do
+      defmodule MyApp.Orders.PaymentGatewayTimeout do
         use Errata.InfrastructureError,
-          default_message: "something isn't right with the infrastructure"
+          default_message: "the payment gateway timed out"
       end
   """
 

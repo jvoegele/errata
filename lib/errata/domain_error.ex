@@ -16,9 +16,9 @@ defmodule Errata.DomainError do
   To define a new custom domain error type, `use/2` the `Errata.DomainError` module in your own
   error module:
 
-      defmodule MyApp.SomeContext.SomeError do
+      defmodule MyApp.Orders.OrderNotFound do
         use Errata.DomainError,
-          default_message: "something isn't right in this context"
+          default_message: "the requested order does not exist"
       end
   """
 

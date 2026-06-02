@@ -106,20 +106,20 @@ defmodule Errata do
   and call `Errata.create/2` for any of them without a separate `require` for
   each error type:
 
-      defmodule MyApp.SomeContext do
+      defmodule MyApp.Orders do
         require Errata
-        alias MyApp.SomeContext.{UnknownThing, ThingConflict}
+        alias MyApp.Orders.{OrderNotFound, PaymentDeclined}
 
-        def fetch(id) do
-          {:error, Errata.create(UnknownThing, reason: :not_found, context: %{id: id})}
+        def fetch_order(id) do
+          {:error, Errata.create(OrderNotFound, reason: :not_found, context: %{order_id: id})}
         end
       end
 
   Compare to the per-module macro, which requires a `require` for every error
   type used in the module:
 
-      require MyApp.SomeContext.UnknownThing, as: UnknownThing
-      require MyApp.SomeContext.ThingConflict, as: ThingConflict
+      require MyApp.Orders.OrderNotFound, as: OrderNotFound
+      require MyApp.Orders.PaymentDeclined, as: PaymentDeclined
   """
   defmacro create(error_module, params \\ Macro.escape(%{})) do
     quote do
@@ -139,15 +139,15 @@ defmodule Errata do
   system boundaries (such as a Phoenix fallback controller) where errors of
   many different types are handled uniformly.
 
-      iex> alias MyApp.SomeContext.MyError
-      iex> error = MyError.new(reason: :invalid_data, context: %{foo: "bar"})
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> error = OrderNotFound.new(reason: :not_found, context: %{order_id: 42})
       iex> map = Errata.to_map(error)
       iex> map.error_type
-      "MyApp.SomeContext.MyError"
+      "MyApp.Orders.OrderNotFound"
       iex> map.reason
-      :invalid_data
+      :not_found
       iex> map.context
-      %{foo: "bar"}
+      %{order_id: 42}
 
   Raises an `ArgumentError` if `error` is not an Errata error.
   """
@@ -169,12 +169,12 @@ defmodule Errata do
   user (for example, the body of a `4xx` HTTP response), supplying your own
   fallback for the `nil` case.
 
-      iex> alias MyApp.SomeContext.MyError
-      iex> error = MyError.new(message: "could not place the order", reason: :empty_cart)
+      iex> alias MyApp.Orders.PaymentDeclined
+      iex> error = PaymentDeclined.new(reason: :insufficient_funds)
       iex> Errata.display_message(error)
-      "could not place the order"
+      "the payment was declined"
       iex> Exception.message(error)
-      "could not place the order: :empty_cart"
+      "the payment was declined: :insufficient_funds"
 
   Raises an `ArgumentError` if `error` is not an Errata error.
   """

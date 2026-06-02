@@ -14,8 +14,8 @@ defmodule Errata.Error do
   Note the distinction between two ways of rendering an error as a string.
   `Exception.message/1` (and the `String.Chars` implementation) return a
   _developer-oriented_ message that combines `message` and `reason` (for
-  example, `"could not place the order: :empty_cart"`) — useful in logs and
-  raised-exception output. `Errata.display_message/1` returns just the
+  example, `"the requested order does not exist: :not_found"`) — useful in logs
+  and raised-exception output. `Errata.display_message/1` returns just the
   human-readable `message`, intended for rendering to end users.
 
   Because these error types are defined with `defexception/1`, they can be raised as exceptions
@@ -34,9 +34,9 @@ defmodule Errata.Error do
 
   To define a new custom error type, `use/2` the `Errata.Error` module in your own error module:
 
-      defmodule MyApp.SomeError do
+      defmodule MyApp.UnexpectedError do
         use Errata.Error,
-          default_message: "something isn't right"
+          default_message: "an unexpected error occurred"
       end
 
   > #### `use Errata.Error` {: .info}
@@ -65,10 +65,10 @@ defmodule Errata.Error do
   implemented as a macro. For example:
 
       defmodule MyApp.SomeModule do
-        require MyApp.SomeError, as: SomeError
+        require MyApp.UnexpectedError, as: UnexpectedError
 
         def some_function(arg) do
-          {:error, SomeError.create(reason: :helpful_tag, context: %{arbitrary: "metadata", arg: arg})}
+          {:error, UnexpectedError.create(reason: :unexpected, context: %{arg: arg})}
         end
       end
 
@@ -76,10 +76,10 @@ defmodule Errata.Error do
   if desired:
 
       defmodule MyApp.SomeModule do
-        require MyApp.SomeError, as: SomeError
+        require MyApp.UnexpectedError, as: UnexpectedError
 
         def some_function!(arg) do
-          raise SomeError, reason: :helpful_tag, context: %{arbitrary: "metadata", arg: arg}
+          raise UnexpectedError, reason: :unexpected, context: %{arg: arg}
         end
       end
 
