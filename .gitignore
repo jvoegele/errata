@@ -29,3 +29,7 @@ errata-*.tar
 *.beam
 /config/*.secret.exs
 .elixir_ls/
+
+# Dialyzer PLT files (built/cached in CI)
+/priv/plts/*.plt
+/priv/plts/*.plt.hash

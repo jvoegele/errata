@@ -14,6 +14,12 @@ defmodule Errata.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
 
+      # Dialyzer: keep PLTs in a stable, cacheable location for CI
+      dialyzer: [
+        plt_local_path: "priv/plts",
+        plt_core_path: "priv/plts"
+      ],
+
       # Hex
       description: "Elixir library for structured error handling",
       package: package(),
