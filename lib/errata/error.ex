@@ -98,7 +98,7 @@ defmodule Errata.Error do
 
   See also `t:params/0`.
   """
-  @type param :: :message | :reason | :context
+  @type param :: :message | :reason | :context | :cause
 
   @typedoc """
   Type to represent allowable values to be passes as params for creating error structs.
@@ -141,6 +141,47 @@ defmodule Errata.Error do
   Note that because this is a macro, callers must `require/2` the error module to be able to use it.
   """
   @macrocallback create(params()) :: Macro.t()
+
+  @doc """
+  Invoked to wrap an existing error, exception, or arbitrary value as the
+  `:cause` of a new error struct, capturing the current `__ENV__`.
+
+  This is the idiomatic way to translate a lower-level failure into a structured
+  Errata error without losing the context of the original. It is equivalent to
+  `c:create/1` with the given `cause` placed in the `:cause` field. See
+  `c:wrap/2` to also provide params (such as a `:reason`) and the original
+  stacktrace.
+
+  Like `c:create/1`, this is a macro, so callers must `require/2` the error module.
+  """
+  @macrocallback wrap(cause :: Macro.t()) :: Macro.t()
+
+  @doc """
+  Invoked to wrap an existing error as the `:cause` of a new error struct, with
+  the given `opts`, capturing the current `__ENV__`.
+
+  In addition to the standard params accepted by `c:create/1` (`:message`,
+  `:reason`, `:context`), `opts` may include:
+
+    * `:stacktrace` - the stacktrace where the original error occurred, typically
+      `__STACKTRACE__` from within a `rescue`/`catch` clause
+    * `:kind` - the kind of the wrapped error, one of `:error` (the default),
+      `:throw`, or `:exit`
+
+  The wrapped value is stored as an `Errata.Cause` in the `:cause` field, and can
+  be retrieved with `Errata.cause/1`. The typical use is to translate a rescued
+  exception while preserving its original stacktrace:
+
+      try do
+        Jason.decode!(payload)
+      rescue
+        e ->
+          {:error, MyApp.InvalidPayload.wrap(e, stacktrace: __STACKTRACE__, reason: :malformed_json)}
+      end
+
+  Like `c:create/1`, this is a macro, so callers must `require/2` the error module.
+  """
+  @macrocallback wrap(cause :: Macro.t(), opts :: Macro.t()) :: Macro.t()
 
   @doc """
   Invoked to convert an error to a plain, JSON-encodable map.

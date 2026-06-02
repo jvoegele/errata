@@ -87,6 +87,84 @@ defmodule Errata.ErrorTest do
     end
   end
 
+  describe "new/1 with a :cause" do
+    test "normalizes a raw cause value into an Errata.Cause" do
+      original = %RuntimeError{message: "boom"}
+      error = TestError.new(cause: original)
+
+      assert %Errata.Cause{kind: :error, value: ^original, stacktrace: nil} = error.cause
+      refute error.env
+    end
+  end
+
+  describe "wrap/1" do
+    test "wraps a value as the cause and captures the current env" do
+      original = %RuntimeError{message: "boom"}
+      error = TestError.wrap(original)
+
+      assert %Errata.Cause{kind: :error, value: ^original, stacktrace: nil} = error.cause
+      assert %Errata.Env{module: __MODULE__} = error.env
+      # default message/reason still apply
+      assert error.message == "this is only a test"
+      assert error.reason == :testing_123
+    end
+  end
+
+  describe "wrap/2" do
+    test "stores params alongside the cause and preserves the original stacktrace" do
+      {original, stacktrace} =
+        try do
+          raise "kaboom"
+        rescue
+          e -> {e, __STACKTRACE__}
+        end
+
+      error = TestError.wrap(original, reason: :wrapped, context: %{a: 1}, stacktrace: stacktrace)
+
+      assert error.reason == :wrapped
+      assert error.context == %{a: 1}
+      assert %Errata.Cause{kind: :error, value: ^original, stacktrace: ^stacktrace} = error.cause
+      assert is_list(error.cause.stacktrace)
+      assert %Errata.Env{module: __MODULE__} = error.env
+    end
+
+    test "supports a :kind for thrown/exited causes" do
+      error = TestError.wrap(:boom, kind: :throw)
+      assert %Errata.Cause{kind: :throw, value: :boom} = error.cause
+    end
+
+    test "accepts a non-exception term as the cause" do
+      error = TestError.wrap({:error, :db_timeout}, reason: :infra)
+      assert Errata.cause(error) == {:error, :db_timeout}
+    end
+
+    test "rejects unknown param keys" do
+      assert_raise ArgumentError, ~r/invalid param key\(s\).*:bogus/, fn ->
+        TestError.wrap(%RuntimeError{}, bogus: true)
+      end
+    end
+  end
+
+  describe "to_map/1 cause serialization" do
+    test "renders a wrapped standard exception by type and message" do
+      error = TestError.new(cause: %RuntimeError{message: "boom"})
+      assert TestError.to_map(error).cause == %{error_type: "RuntimeError", message: "boom"}
+    end
+
+    test "recurses into a wrapped Errata error cause" do
+      inner = TestError.new(reason: :inner)
+      map = TestError.new(cause: inner) |> TestError.to_map()
+
+      assert map.cause.error_type == inspect(TestError)
+      assert map.cause.reason == :inner
+    end
+
+    test "is nil when there is no cause" do
+      assert TestError.new().cause == nil
+      assert TestError.to_map(TestError.new()).cause == nil
+    end
+  end
+
   describe "to_map/1" do
     test "produces a JSON-compatible map" do
       error = TestError.create(context: %{foo: "bar"})

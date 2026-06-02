@@ -17,6 +17,8 @@ Each Errata error is an `Exception` struct with a well-defined set of fields:
   * `message` — a human-readable description of the error
   * `reason` — an atom that classifies the error, useful for pattern matching
   * `context` — a map of arbitrary metadata captured at the site of the error
+  * `cause` — the original error wrapped by this one, when it was created from a
+    lower-level failure (see `Errata.Cause` and `Errata.cause/1`)
   * `env` — the module, function, file, line, and stacktrace where the error
     was created (see `Errata.Env`)
 
@@ -33,6 +35,8 @@ With Errata you can:
     in an `{:error, error}` tuple or raised with `raise/2`.
   * **Capture rich context** — an error reason, arbitrary metadata, and the
     exact point of origin (module, function, file, line, and stacktrace).
+  * **Wrap lower-level errors** — catch an exception or error value and wrap it
+    as the `:cause` of a structured Errata error, without losing the original.
   * **Classify errors** as domain, infrastructure, or general, and branch on
     that classification at system boundaries with the `Errata` guards.
   * **Serialize errors automatically** — every error type implements the
@@ -222,6 +226,46 @@ raised with `raise/2`, passing params as the second argument:
 raise MyApp.Orders.OrderNotFound, reason: :not_found, context: %{order_id: 42}
 ```
 
+## Wrapping errors
+
+When a lower-level subsystem or external library fails, you often want to
+translate that failure into a structured Errata error of your own — without
+discarding the original. The generated `wrap/2` macro does exactly this: it
+creates an error (capturing the current `__ENV__`, like `create/1`) and stores
+the original error, exception, or value as its `:cause`.
+
+The typical use is inside a `rescue` clause, passing `__STACKTRACE__` so the
+original error's point of failure is preserved alongside it:
+
+```elixir
+iex> require MyApp.Orders.OrderNotFound, as: OrderNotFound
+iex> error =
+...>   try do
+...>     raise "the database connection dropped"
+...>   rescue
+...>     e -> OrderNotFound.wrap(e, stacktrace: __STACKTRACE__, reason: :lookup_failed)
+...>   end
+iex> error.reason
+:lookup_failed
+iex> Errata.cause(error)
+%RuntimeError{message: "the database connection dropped"}
+```
+
+The cause can be any term — another Errata error, a standard exception, or a
+plain value such as the `reason` from an `{:error, reason}` tuple. Retrieve the
+immediate cause with `Errata.cause/1`, or follow a chain of wrapped errors to
+the bottom with `Errata.root_cause/1`. The cause is also included when the error
+is serialized with `to_map/1` or encoded as JSON.
+
+For logging, `Errata.format_chain/1` renders an error together with its full
+chain of causes:
+
+```
+MyApp.Orders.OrderNotFound: the requested order does not exist: :lookup_failed
+Caused by: ** (RuntimeError) the database connection dropped
+    (stdlib 5.2) ...
+```
+
 ## Handling errors
 
 Errata errors are standard Elixir exceptions, so they can be rescued like any
@@ -401,7 +445,7 @@ Add `errata` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:errata, "~> 0.9.0"}
+    {:errata, "~> 0.10.0"}
   ]
 end
 ```
