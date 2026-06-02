@@ -35,7 +35,7 @@ defmodule Errata.Env do
   Type to represent an `Errata.Env` struct as a plain, JSON-encodable map.
   """
   @type env_map :: %{
-          module: module(),
+          module: String.t(),
           function: String.t(),
           file: Macro.Env.file(),
           line: Macro.Env.line(),
@@ -71,11 +71,14 @@ defmodule Errata.Env do
   @spec to_map(Errata.Env.t()) :: Errata.Env.env_map()
   def to_map(%__MODULE__{module: module, file: file, line: line} = env) do
     %{
-      module: module,
+      # Use `inspect/1` so module names serialize as "MyApp.Foo" rather than
+      # the raw atom form "Elixir.MyApp.Foo".
+      module: inspect(module),
       function: format_mfa(env),
       file: file,
       line: line,
-      file_line: Exception.format_file_line(file, line)
+      # `Exception.format_file_line/2` appends a trailing ":"; drop it.
+      file_line: String.trim_trailing(Exception.format_file_line(file, line), ":")
     }
   end
 

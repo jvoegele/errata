@@ -92,15 +92,18 @@ defmodule Errata.ErrorTest do
       error = TestError.create(context: %{foo: "bar"})
       map = TestError.to_map(error)
 
-      assert map.error_type == TestError
+      assert map.error_type == inspect(TestError)
+      refute map.error_type =~ "Elixir."
       assert map.reason == error.reason
       assert map.message == error.message
       assert map.context == %{foo: "bar"}
 
-      assert map.env.module == __MODULE__
+      assert map.env.module == inspect(__MODULE__)
+      refute map.env.module =~ "Elixir."
       assert map.env.file =~ ~r<error_test\.exs>
       assert is_integer(map.env.line)
-      assert map.env.file_line =~ ~r<error_test\.exs:\d>
+      # file_line has no trailing colon
+      assert map.env.file_line =~ ~r<error_test\.exs:\d+$>
       assert map.env.function =~ ~r<test to_map/1>
     end
   end
@@ -164,7 +167,8 @@ defmodule Errata.ErrorTest do
       assert %{file: file, line: line, module: module, function: function} = decoded.env
       assert file =~ ~r/error_test.exs$/
       assert is_integer(line)
-      assert module == to_string(__MODULE__)
+      assert module == inspect(__MODULE__)
+      refute module =~ "Elixir."
 
       %{module: current_module, function: {current_function, current_function_arity}} = __ENV__
 

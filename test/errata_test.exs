@@ -185,7 +185,8 @@ defmodule ErrataTest do
       error = TestDomainError.new(reason: :boom, context: %{a: 1})
       map = Errata.to_map(error)
 
-      assert map.error_type == TestDomainError
+      assert map.error_type == inspect(TestDomainError)
+      refute map.error_type =~ "Elixir."
       assert map.reason == :boom
       assert map.context == %{a: 1}
       # matches the per-module callback for the same error

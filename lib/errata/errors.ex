@@ -46,7 +46,9 @@ defmodule Errata.Errors do
   @doc false
   def to_map(%error_type{} = error) when is_error(error) do
     %{
-      error_type: error_type,
+      # `inspect/1` renders the module as "MyApp.Foo" instead of the raw atom
+      # form "Elixir.MyApp.Foo" that would otherwise leak into JSON output.
+      error_type: inspect(error_type),
       reason: error.reason,
       message: error.message,
       env: Errata.Env.to_map(error.env),

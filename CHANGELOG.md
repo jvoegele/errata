@@ -6,9 +6,21 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+- `Errata.create/2` macro to create an error of any type while capturing the
+  current env, without a separate `require` for each error module. (#4)
+- `Errata.to_map/1` to convert any Errata error to a plain, JSON-encodable map
+  without needing to know the error's specific module. (#5)
+
 ### Changed
 - **Breaking:** `new/1`, `create/1`, and `raise/2` now raise an `ArgumentError`
   when given unrecognized param keys instead of silently ignoring them. Only
   `:message`, `:reason`, and `:context` are accepted. Callers that previously
   relied on extra keys being dropped will need to remove them. (#3)
+
+### Fixed
+- Serialized error maps (`to_map/1`) and their JSON form no longer leak the
+  `Elixir.` prefix on module names: `error_type` and `env.module` are now
+  rendered as e.g. `"MyApp.Foo"` (as strings rather than raw atoms), and
+  `env.file_line` no longer includes a trailing colon. (#6)
 

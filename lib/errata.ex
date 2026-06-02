@@ -143,7 +143,7 @@ defmodule Errata do
       iex> error = MyError.new(reason: :invalid_data, context: %{foo: "bar"})
       iex> map = Errata.to_map(error)
       iex> map.error_type
-      MyApp.SomeContext.MyError
+      "MyApp.SomeContext.MyError"
       iex> map.reason
       :invalid_data
       iex> map.context
