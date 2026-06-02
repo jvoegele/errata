@@ -33,25 +33,43 @@ Errata errors fall into one of three general classifications:
   (as opposed to application code) or any other sort of error condition for
   which there is no need to distinguish based on classification.
 
+An error's classification—its _kind_—is primarily a concern at the boundaries
+of the system rather than within domain logic. Code at the edges of the
+application (such as a Phoenix fallback controller) can use the custom guards
+described under [Handling Errata errors](#handling-errata-errors) to decide how
+to treat an error based on its kind: domain errors might become `4xx` responses
+that are safe to show to users, while infrastructure errors become `5xx`
+responses that are logged with alerting and hidden from users. Within your
+domain logic, by contrast, you typically dispatch on the specific error _type_.
+In short: an error's **kind** decides how the boundary treats it, while its
+**type** decides how your domain logic behaves.
+
 ## Defining custom error types
 
-Errata makes it easy to define custom error types for applications or libraries.
-The following examples demonstrate how to define domain errors, infrastructure
-errors, and general errors.
+Most errors in an application are either _domain errors_ or _infrastructure
+errors_, so Errata provides a dedicated module for each. Prefer these two when
+defining custom error types: they make the classification explicit and allow
+domain and infrastructure errors to be identified throughout the system.
 
 ```elixir
 defmodule MyApp.SomeContext.MyDomainError do
-  # Define a custom domain error in some context.
+  # A business-rule violation or other error within the problem domain.
   use Errata.DomainError
 end
 
 defmodule MyApp.SomeContext.MyInfrastructureError do
-  # Define a custom infrastructure error in some context.
+  # A network timeout, database failure, or other infrastructure-level error.
   use Errata.InfrastructureError
 end
+```
 
+For the occasional error that fits neither category—such as an error
+originating in library code—use the base `Errata.Error` module, which creates
+an error of kind `:general`:
+
+```elixir
 defmodule MyApp.SomeContext.MyError do
-  # Define a custom error in some context.
+  # An error that is neither a domain nor an infrastructure error.
   use Errata.Error
 end
 ```
@@ -105,6 +123,30 @@ iex> match?(%Errata.Env{stacktrace: stacktrace} when is_list(stacktrace), error.
 true
 ```
 
+> #### Prefer `create/1` to capture context {: .tip}
+>
+> Because `new/1` leaves the `:env` field as `nil`, it discards the module,
+> function, file, line, and stacktrace of the error's origin—often the most
+> useful information when debugging or reporting an error. Prefer `create/1`
+> (or `Errata.create/2`, below) unless you have a specific reason not to
+> capture this context.
+
+The `create/1` macro requires `require/2`-ing each error module. As an
+alternative, the `Errata.create/2` macro creates an error of any type without a
+separate `require` for each one—handy when a module works with several error
+types. Since you typically already `require Errata` to use the custom guards,
+you can `alias` your error modules and call `Errata.create/2` directly:
+
+```elixir
+iex> require Errata
+iex> alias MyApp.SomeContext.MyError
+iex> error = Errata.create(MyError, reason: :invalid_data)
+iex> error.reason
+:invalid_data
+iex> match?(%Errata.Env{}, error.env)
+true
+```
+
 Whether `new/1` or `create/1` is used to create the error, it is preferable to
 wrap the error in a tuple when returning it as a value from functions:
 
@@ -112,6 +154,31 @@ wrap the error in a tuple when returning it as a value from functions:
 {:error, MyError.new(reason: :invalid_data)}
 {:error, MyError.create(reason: :invalid_data)}
 ```
+
+## Error types vs. the `:reason` field
+
+Errata errors carry both a _type_ (the module) and an optional `:reason` atom,
+and it is not always obvious which to reach for. As a rule of thumb:
+
+- Use a **distinct error type** for each condition that callers may want to
+  handle differently or that has its own meaning in the domain. The type is the
+  primary identity of an error and the thing you pattern match on.
+- Use the **`:reason`** field to _sub-classify_ within a single error type—to
+  distinguish variations of the same error that share handling but differ in
+  cause.
+
+For example, a single `PaymentDeclined` domain error can use `:reason` to record
+why the payment was declined, rather than defining a separate type for each
+cause:
+
+```elixir
+PaymentDeclined.create(reason: :insufficient_funds)
+PaymentDeclined.create(reason: :fraud_suspected)
+```
+
+Conversely, a `:reason` that merely restates the type name (such as
+`UnknownSku.create(reason: :unknown_sku)`) adds no information and can be
+omitted.
 
 ## Handling Errata errors
 
@@ -125,7 +192,11 @@ Errata provides custom guards for handling Errata error types specifically:
 - `Errata.is_domain_error/1`
 - `Errata.is_infrastructure_error/1`
 
-To use these custom guards, `import` or `require` the `Errata` module.
+To use these custom guards, `import` or `require` the `Errata` module. The
+kind-based guards (`is_domain_error/1` and `is_infrastructure_error/1`) are
+especially useful at system boundaries—for example, translating domain errors
+into client errors (`4xx`) and infrastructure errors into server errors (`5xx`)
+with alerting—while domain logic generally matches on the specific error type.
 
 The following example demonstrates handling Errata errors both as raised
 exceptions and as error values returned from functions.
