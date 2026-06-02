@@ -40,7 +40,7 @@ jobs:
           - elixir: "1.18.4"
             otp: "27.2"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: erlef/setup-beam@v1
         with:
@@ -48,7 +48,7 @@ jobs:
           otp-version: ${{ matrix.otp }}
 
       - name: Cache deps and build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             deps
@@ -66,7 +66,7 @@ jobs:
     env:
       MIX_ENV: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: erlef/setup-beam@v1
         with:
@@ -74,7 +74,7 @@ jobs:
           otp-version: "27.2"
 
       - name: Cache deps and build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             deps
@@ -96,7 +96,7 @@ jobs:
     env:
       MIX_ENV: dev
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: erlef/setup-beam@v1
         with:
@@ -104,7 +104,7 @@ jobs:
           otp-version: "27.2"
 
       - name: Cache deps and build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             deps
@@ -116,7 +116,7 @@ jobs:
       # The PLT only changes when the OTP/Elixir/deps change, so cache it
       # separately and keep it across runs to avoid the slow rebuild.
       - name: Cache PLT
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: priv/plts
           key: ${{ runner.os }}-plt-1.18.4-27.2-${{ hashFiles('**/mix.lock') }}
