@@ -48,6 +48,12 @@ defmodule Errata.Error do
 
     * `:default_reason` - the default value to use for the `:reason` field if it is not provided
     * `:default_message` - the default value to use for the `:message` field if it is not provided
+    * `:reasons` - an optional list of atoms enumerating the valid reasons for this error type.
+      When given, creating an error (via `c:new/1`, `c:create/1`, `c:wrap/2`, or `raise/2`) with a
+      `:reason` outside this set raises an `ArgumentError`. A `nil` (unspecified) reason is always
+      allowed, and a `:default_reason`, if also given, must be one of the declared `:reasons`.
+      Declaring reasons also generates a `reason/0` type enumerating them, so the valid reasons are
+      visible in the generated documentation.
     * `:kind` - the "kind" of Errata error to create, one of `:domain`, `:infrastructure`, or
       `:general` (which is the default)
 
