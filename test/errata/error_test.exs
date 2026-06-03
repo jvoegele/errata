@@ -340,32 +340,71 @@ defmodule Errata.ErrorTest do
     end
   end
 
-  describe "Jason.Encoder protocol implementation:" do
-    require TestError
+  if Code.ensure_loaded?(Jason.Encoder) do
+    describe "Jason.Encoder protocol implementation:" do
+      require TestError
 
-    test "produces JSON data for the relevant fields" do
-      error =
-        TestError.create(
-          reason: :to_believe,
-          context: %{meta: "data", danger: {:error, "tuple"}, pid: self()}
-        )
+      test "produces JSON data for the relevant fields" do
+        error =
+          TestError.create(
+            reason: :to_believe,
+            context: %{meta: "data", danger: {:error, "tuple"}, pid: self()}
+          )
 
-      assert {:ok, decoded} = error |> Jason.encode!() |> Jason.decode(keys: :atoms)
-      assert decoded.message == error.message
-      assert decoded.reason == to_string(error.reason)
-      assert %{meta: "data", danger: ["error", "tuple"], pid: pid_string} = decoded.context
-      assert pid_string =~ ~r(#PID<\d+\.\d+\.\d+>)
+        assert {:ok, decoded} = error |> Jason.encode!() |> Jason.decode(keys: :atoms)
+        assert decoded.message == error.message
+        assert decoded.reason == to_string(error.reason)
+        assert %{meta: "data", danger: ["error", "tuple"], pid: pid_string} = decoded.context
+        assert pid_string =~ ~r(#PID<\d+\.\d+\.\d+>)
 
-      assert %{file: file, line: line, module: module, function: function} = decoded.env
-      assert file =~ ~r/error_test.exs$/
-      assert is_integer(line)
-      assert module == inspect(__MODULE__)
-      refute module =~ "Elixir."
+        assert %{file: file, line: line, module: module, function: function} = decoded.env
+        assert file =~ ~r/error_test.exs$/
+        assert is_integer(line)
+        assert module == inspect(__MODULE__)
+        refute module =~ "Elixir."
 
-      %{module: current_module, function: {current_function, current_function_arity}} = __ENV__
+        %{module: current_module, function: {current_function, current_function_arity}} = __ENV__
 
-      assert function ==
-               Exception.format_mfa(current_module, current_function, current_function_arity)
+        assert function ==
+                 Exception.format_mfa(current_module, current_function, current_function_arity)
+      end
+    end
+  end
+
+  if Code.ensure_loaded?(JSON.Encoder) do
+    describe "JSON.Encoder protocol implementation:" do
+      require TestError
+
+      test "produces JSON data for the relevant fields" do
+        error =
+          TestError.create(
+            reason: :to_believe,
+            context: %{meta: "data", danger: {:error, "tuple"}, pid: self()}
+          )
+
+        assert decoded =
+                 error |> JSON.encode_to_iodata!() |> IO.iodata_to_binary() |> JSON.decode!()
+
+        # JSON library decodes keys as strings by default
+        assert decoded["message"] == error.message
+        assert decoded["reason"] == to_string(error.reason)
+
+        context = decoded["context"]
+        assert context["meta"] == "data"
+        assert context["danger"] == ["error", "tuple"]
+        assert context["pid"] =~ ~r(#PID<\d+\.\d+\.\d+>)
+
+        env = decoded["env"]
+        assert env["file"] =~ ~r/error_test.exs$/
+        assert is_integer(env["line"])
+        assert env["module"] == inspect(__MODULE__)
+        refute env["module"] =~ "Elixir."
+
+        %{module: current_module, function: {current_function, current_function_arity}} = __ENV__
+
+        assert env["function"] ==
+                 Exception.format_mfa(current_module, current_function, current_function_arity)
+      end
     end
   end
 end

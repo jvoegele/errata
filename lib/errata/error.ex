@@ -184,7 +184,7 @@ defmodule Errata.Error do
   exception while preserving its original stacktrace:
 
       try do
-        Jason.decode!(payload)
+        JSON.decode!(payload)
       rescue
         e ->
           {:error, MyApp.InvalidPayload.wrap(e, stacktrace: __STACKTRACE__, reason: :malformed_json)}

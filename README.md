@@ -156,7 +156,7 @@ Each `use` accepts a few options:
 
 Whichever module you use, the resulting error type is an exception struct that
 conforms to the `t:Errata.error/0` type, implements the `Errata.Error`
-behaviour, and provides `String.Chars` and `Jason.Encoder` implementations so
+behaviour, and provides `String.Chars`, `JSON.Encoder`, and `Jason.Encoder` implementations so
 that it can be rendered as a string or encoded as JSON automatically.
 
 ## Creating errors as return values

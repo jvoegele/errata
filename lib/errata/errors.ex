@@ -133,13 +133,6 @@ defmodule Errata.Errors do
   end
 
   @doc false
-  def to_json(error, opts) do
-    error
-    |> to_map()
-    |> Errata.JSON.encode(opts)
-  end
-
-  @doc false
   def define(kind, module_name, opts \\ [])
       when kind in [:domain, :infrastructure, :general] and is_atom(module_name) do
     reasons = Keyword.get(opts, :reasons)
@@ -152,7 +145,7 @@ defmodule Errata.Errors do
     exception_def = define_exception(kind, opts)
     errata_error_impl = define_errata_error_callbacks()
     string_chars_impl = define_string_chars_impl(module_name)
-    jason_encoder_impl = define_jason_encoder_impl(module_name)
+    encoder_impls = define_encoder_impls(module_name)
 
     quote do
       unquote(attribute_defs)
@@ -162,7 +155,7 @@ defmodule Errata.Errors do
       unquote(exception_def)
       unquote(errata_error_impl)
       unquote(string_chars_impl)
-      unquote(jason_encoder_impl)
+      unquote_splicing(encoder_impls)
     end
   end
 
@@ -395,11 +388,20 @@ defmodule Errata.Errors do
     end
   end
 
-  defp define_jason_encoder_impl(error_module) do
-    quote do
-      defimpl Jason.Encoder, for: unquote(error_module) do
-        def encode(errata_error, opts) do
-          Errata.Errors.to_json(errata_error, opts)
+  defp define_encoder_impls(error_module) do
+    configs = [
+      {JSON.Encoder, JSON.Encoder.Map, :encode},
+      {Jason.Encoder, Jason.Encode, :map}
+    ]
+
+    for {protocol, mod, fun} <- configs, Code.ensure_loaded?(protocol) do
+      quote do
+        defimpl unquote(protocol), for: unquote(error_module) do
+          def encode(errata_error, opts_or_encoder) do
+            errata_error
+            |> Errata.Errors.to_map()
+            |> unquote(mod).unquote(fun)(opts_or_encoder)
+          end
         end
       end
     end
