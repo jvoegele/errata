@@ -7,6 +7,8 @@ defmodule Errata do
              |> String.split("<!-- README END -->")
              |> List.first()
 
+  require Logger
+
   @typedoc """
   Type to represent the various kinds of Errata errors.
   """
@@ -351,4 +353,124 @@ defmodule Errata do
   defp format_cause(%Errata.Cause{kind: kind, value: value, stacktrace: stacktrace}) do
     Exception.format(kind, value, stacktrace || [])
   end
+
+  @doc """
+  Logs `error` at the given `level` (default `:error`) with its structured fields
+  attached as Logger metadata.
+
+  The log _message_ is the developer-oriented `Exception.message/1` (combining
+  `:message` and `:reason`). The error's `:reason`, `:kind`, `:context`, and
+  origin `:env` are attached as **Logger metadata** rather than being flattened
+  into the message string, so they remain queryable structured fields in
+  backends that support them. The following metadata keys are set:
+
+    * `:error_type` — the error's module
+    * `:kind` — the error's kind (`:domain` / `:infrastructure` / `:general`)
+    * `:reason` — the error's reason
+    * `:context` — the error's context map
+    * `:env` — a map of the origin `module`, `function`, `file`, and `line`
+
+  Returns `:ok`. Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec log(error(), Logger.level()) :: :ok
+  def log(error, level \\ :error)
+
+  def log(error, level) when is_error(error) do
+    Logger.log(level, fn -> Exception.message(error) end, log_metadata(error))
+  end
+
+  def log(other, _level) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Emits a `:telemetry` event for `error`, and optionally logs it.
+
+  This is the seam for error _reporting_: rather than integrating with any
+  particular external service, Errata emits a telemetry event that your
+  application handles — attaching a handler that forwards to Sentry, a metrics
+  backend, or wherever errors should go. The vendor integration stays in your
+  application; Errata stays out of it.
+
+  The event is `[:errata, :error]`, with:
+
+    * measurements `%{system_time: integer(), count: 1}` — `:count` is always `1`,
+      so `Telemetry.Metrics.counter/2` works out of the box
+    * metadata containing the full `:error` struct plus `:kind`, `:reason`,
+      `:error_type`, and `:context` as top-level keys (simple values suitable for
+      use as metric tags)
+
+  Options:
+
+    * `:metadata` — a map or keyword list of extra metadata merged into the event.
+      The standard keys above are protected: on a key collision, the standard
+      value wins.
+    * `:measurements` — extra measurements merged into the event, with the
+      standard measurements likewise protected.
+    * `:log` — also log the error via `log/2`. `false` (the default) emits
+      telemetry only; `true` logs at `:error`; an atom level (e.g. `:warning`)
+      logs at that level.
+
+  Returns `:ok`. Raises an `ArgumentError` if `error` is not an Errata error.
+
+      :telemetry.attach("myapp-errata", [:errata, :error], &MyApp.ErrorReporter.handle/4, nil)
+
+      Errata.report(error, metadata: %{request_id: request_id}, log: :warning)
+  """
+  @spec report(error(), keyword()) :: :ok
+  def report(error, opts \\ [])
+
+  def report(error, opts) when is_error(error) and is_list(opts) do
+    measurements =
+      opts
+      |> Keyword.get(:measurements, [])
+      |> Map.new()
+      |> Map.merge(%{system_time: System.system_time(), count: 1})
+
+    metadata =
+      opts
+      |> Keyword.get(:metadata, [])
+      |> Map.new()
+      |> Map.merge(standard_metadata(error))
+
+    :telemetry.execute([:errata, :error], measurements, metadata)
+
+    maybe_log(error, Keyword.get(opts, :log, false))
+
+    :ok
+  end
+
+  def report(other, _opts) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  defp standard_metadata(error) do
+    %{
+      error: error,
+      kind: error.kind,
+      reason: error.reason,
+      error_type: error.__struct__,
+      context: error.context || %{}
+    }
+  end
+
+  defp log_metadata(error) do
+    [
+      error_type: error.__struct__,
+      kind: error.kind,
+      reason: error.reason,
+      context: error.context || %{},
+      env: env_metadata(error.env)
+    ]
+  end
+
+  defp env_metadata(%Errata.Env{module: module, function: function, file: file, line: line}) do
+    %{module: module, function: function, file: file, line: line}
+  end
+
+  defp env_metadata(_), do: %{}
+
+  defp maybe_log(_error, level) when level in [false, nil], do: :ok
+  defp maybe_log(error, true), do: log(error, :error)
+  defp maybe_log(error, level) when is_atom(level), do: log(error, level)
 end

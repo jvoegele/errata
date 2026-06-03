@@ -41,6 +41,9 @@ With Errata you can:
     that classification at system boundaries with the `Errata` guards.
   * **Serialize errors automatically** — every error type implements the
     `String.Chars` and `Jason.Encoder` protocols.
+  * **Report errors at a boundary** — log an error with its fields as structured
+    metadata, or emit a telemetry event for your own handler to forward to
+    Sentry, a metrics backend, or wherever errors should go.
 
 ## Quick start
 
@@ -407,6 +410,51 @@ example, `"the requested order does not exist: :not_found"`) — useful in logs
 and raised-exception output. When rendering an error for an end user, use
 `Errata.display_message/1` instead, which returns just the human-readable
 `:message`.
+
+## Reporting errors
+
+Because an Errata error carries its full context, it is straightforward to get
+it into your observability stack at a boundary. Errata provides two thin,
+composable functions for this, and — deliberately — no integration with any
+particular external service.
+
+`Errata.log/2` logs an error's developer message at the given level (`:error` by
+default), attaching its `reason`, `kind`, `context`, and origin `env` as **Logger
+metadata** rather than flattening them into the message string, so they stay
+queryable in structured logging backends:
+
+```elixir
+Errata.log(error)            # logs at :error
+Errata.log(error, :warning)  # at a chosen level
+```
+
+`Errata.report/2` emits a [`:telemetry`](https://hexdocs.pm/telemetry) event for
+the error (and, optionally, logs it). This is the seam for external reporting:
+rather than Errata depending on Sentry (or any other service), your application
+attaches a telemetry handler that forwards the error wherever it needs to go.
+The vendor integration lives in your application; Errata stays out of it.
+
+```elixir
+Errata.report(error)
+Errata.report(error, metadata: %{request_id: request_id}, log: :warning)
+```
+
+The event is `[:errata, :error]`, with measurements `%{system_time: _, count: 1}`
+(so [`Telemetry.Metrics`](https://hexdocs.pm/telemetry_metrics) counters work out
+of the box) and metadata carrying the full `:error` struct plus `:kind`,
+`:reason`, `:error_type`, and `:context` as top-level keys — simple values that
+work directly as metric tags. A handler in your application wires it up:
+
+```elixir
+:telemetry.attach("myapp-errata", [:errata, :error], &MyApp.ErrorReporter.handle/4, nil)
+
+def handle([:errata, :error], _measurements, metadata, _config) do
+  Sentry.capture_message(Exception.message(metadata.error),
+    extra: Errata.to_map(metadata.error),
+    tags: %{error_type: inspect(metadata.error_type), reason: metadata.reason}
+  )
+end
+```
 
 ## Choosing between an error type and a reason
 

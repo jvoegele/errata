@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   with a reason outside the declared set raises an `ArgumentError` (a `nil` reason
   is always allowed); a `:default_reason`, if given, must be one of the declared
   reasons; and a `reason/0` type enumerating them is generated for the docs. (#20)
+- Error reporting: `Errata.log/2` logs an error at a given level with its
+  `reason`, `kind`, `context`, and origin attached as structured Logger metadata;
+  `Errata.report/2` emits a `[:errata, :error]` telemetry event (and optionally
+  logs), providing a vendor-neutral seam for forwarding errors to Sentry, metrics,
+  etc. via a telemetry handler in your application. Adds a `telemetry ~> 1.0`
+  dependency. (#19)
 
 ## [0.10.0] - 2026-06-02
 

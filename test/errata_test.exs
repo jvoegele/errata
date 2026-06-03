@@ -8,12 +8,26 @@ defmodule MyApp.Orders.PaymentDeclined do
   use Errata.DomainError, default_message: "the payment was declined"
 end
 
+# A minimal :logger handler that forwards received log events to a test process,
+# so `Errata.log/2`'s structured metadata can be asserted directly.
+defmodule ErrataTest.LogHandler do
+  @moduledoc false
+  def log(event, %{config: %{pid: pid}}), do: send(pid, {:log_event, event})
+end
+
 defmodule ErrataTest do
   use ExUnit.Case
 
   import Errata
+  import ExUnit.CaptureLog
 
   doctest Errata
+
+  # Telemetry handler used by the report/2 tests; an MFA capture avoids the
+  # local-function performance warning telemetry emits for anonymous handlers.
+  def handle_telemetry(event, measurements, metadata, %{pid: pid}) do
+    send(pid, {:telemetry_event, event, measurements, metadata})
+  end
 
   defmodule TestGeneralError do
     use Errata.Error
@@ -337,6 +351,118 @@ defmodule ErrataTest do
       assert_raise ArgumentError, ~r/expected a map of context/, fn ->
         Errata.merge_context(error, a: 1)
       end
+    end
+  end
+
+  describe "report/2" do
+    setup do
+      ref = make_ref()
+      handler_id = {__MODULE__, ref}
+
+      :telemetry.attach(
+        handler_id,
+        [:errata, :error],
+        &__MODULE__.handle_telemetry/4,
+        %{pid: self()}
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+      :ok
+    end
+
+    test "emits a telemetry event with standard measurements and metadata" do
+      error = TestDomainError.new(reason: :boom, context: %{a: 1})
+      assert Errata.report(error) == :ok
+
+      assert_received {:telemetry_event, [:errata, :error], measurements, metadata}
+      assert %{count: 1, system_time: system_time} = measurements
+      assert is_integer(system_time)
+      assert metadata.error == error
+      assert metadata.kind == :domain
+      assert metadata.reason == :boom
+      assert metadata.error_type == TestDomainError
+      assert metadata.context == %{a: 1}
+    end
+
+    test "merges caller metadata under the protected standard keys" do
+      error = TestDomainError.new(reason: :boom)
+      Errata.report(error, metadata: %{request_id: "abc", reason: :hijack})
+
+      assert_received {:telemetry_event, _event, _measurements, metadata}
+      assert metadata.request_id == "abc"
+      # the standard key wins on collision
+      assert metadata.reason == :boom
+    end
+
+    test "merges caller measurements under the protected standard keys" do
+      error = TestDomainError.new()
+      Errata.report(error, measurements: %{duration: 5, count: 99})
+
+      assert_received {:telemetry_event, _event, measurements, _metadata}
+      assert measurements.duration == 5
+      # the standard measurement wins on collision
+      assert measurements.count == 1
+    end
+
+    test "normalizes a nil context to an empty map" do
+      Errata.report(TestDomainError.new(reason: :boom))
+      assert_received {:telemetry_event, _event, _measurements, %{context: %{}}}
+    end
+
+    test "does not log by default" do
+      assert capture_log(fn -> Errata.report(TestDomainError.new(reason: :boom)) end) == ""
+    end
+
+    test "also logs when :log is set" do
+      error = TestDomainError.new(message: "boom happened", reason: :boom)
+      log = capture_log(fn -> Errata.report(error, log: :warning) end)
+      assert log =~ "boom happened"
+      assert log =~ "[warning]"
+    end
+
+    test "raises ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.report(:nope) end
+    end
+  end
+
+  describe "log/2" do
+    setup do
+      :logger.add_handler(:errata_test_log, ErrataTest.LogHandler, %{
+        config: %{pid: self()},
+        level: :all
+      })
+
+      on_exit(fn -> :logger.remove_handler(:errata_test_log) end)
+      :ok
+    end
+
+    test "logs the developer message at the given level" do
+      error = TestDomainError.new(message: "human msg", reason: :boom)
+      log = capture_log(fn -> Errata.log(error, :warning) end)
+      assert log =~ "human msg: :boom"
+      assert log =~ "[warning]"
+    end
+
+    test "attaches structured fields as Logger metadata, including the origin env" do
+      error = create(TestDomainError, message: "m", reason: :boom, context: %{a: 1})
+      capture_log(fn -> assert Errata.log(error, :warning) == :ok end)
+
+      assert_received {:log_event, event}
+      assert event.level == :warning
+      assert event.meta.error_type == TestDomainError
+      assert event.meta.kind == :domain
+      assert event.meta.reason == :boom
+      assert event.meta.context == %{a: 1}
+      assert %{module: ErrataTest, file: _, line: _} = event.meta.env
+    end
+
+    test "defaults to the :error level" do
+      capture_log(fn -> assert Errata.log(TestDomainError.new(reason: :boom)) == :ok end)
+      assert_received {:log_event, %{level: :error}}
+    end
+
+    test "raises ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.log(:nope) end
     end
   end
 

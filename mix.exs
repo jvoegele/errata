@@ -45,6 +45,7 @@ defmodule Errata.MixProject do
   defp deps do
     [
       {:jason, ">= 1.3.0"},
+      {:telemetry, "~> 1.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false}
