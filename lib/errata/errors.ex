@@ -15,6 +15,7 @@ defmodule Errata.Errors do
     error_type
     |> struct(validate_params!(params))
     |> normalize_cause()
+    |> validate_reason!()
   end
 
   @doc false
@@ -25,6 +26,7 @@ defmodule Errata.Errors do
       error_type
       |> struct(validate_params!(params))
       |> normalize_cause()
+      |> validate_reason!()
 
     %{error | env: Errata.Env.new(env, stacktrace)}
   end
@@ -62,6 +64,29 @@ defmodule Errata.Errors do
         raise ArgumentError,
               "invalid param key(s) for an Errata error: #{inspect(keys)}. " <>
                 "Allowed keys are #{inspect(@allowed_param_keys)}."
+    end
+  end
+
+  # When an error type declares a closed set of `:reasons`, reject any non-nil
+  # reason outside that set. A `nil` (unspecified) reason is always allowed, and
+  # types that do not declare `:reasons` are unrestricted (their generated
+  # accessor returns `nil`). Returns the error unchanged when valid.
+  defp validate_reason!(%mod{reason: reason} = error) do
+    case mod.__errata_valid_reasons__() do
+      nil ->
+        error
+
+      _valid when is_nil(reason) ->
+        error
+
+      valid ->
+        if reason in valid do
+          error
+        else
+          raise ArgumentError,
+                "invalid reason #{inspect(reason)} for #{inspect(mod)}. " <>
+                  "Declared reasons are #{inspect(valid)}."
+        end
     end
   end
 
@@ -117,8 +142,12 @@ defmodule Errata.Errors do
   @doc false
   def define(kind, module_name, opts \\ [])
       when kind in [:domain, :infrastructure, :general] and is_atom(module_name) do
+    reasons = Keyword.get(opts, :reasons)
+    validate_reasons_opt!(module_name, reasons, Keyword.get(opts, :default_reason))
+
     attribute_defs = define_attributes(module_name)
     type_def = define_type(kind)
+    reasons_def = define_reasons(reasons)
     exception_def = define_exception(kind, opts)
     errata_error_impl = define_errata_error_callbacks()
     string_chars_impl = define_string_chars_impl(module_name)
@@ -127,10 +156,57 @@ defmodule Errata.Errors do
     quote do
       unquote(attribute_defs)
       unquote(type_def)
+      unquote(reasons_def)
       unquote(exception_def)
       unquote(errata_error_impl)
       unquote(string_chars_impl)
       unquote(jason_encoder_impl)
+    end
+  end
+
+  # Validate the `:reasons` option at the `use` site (compile time). When given,
+  # it must be a non-empty list of atoms, and any `:default_reason` must be one
+  # of the declared reasons.
+  defp validate_reasons_opt!(_module, nil, _default_reason), do: :ok
+
+  defp validate_reasons_opt!(module, reasons, default_reason) do
+    unless is_list(reasons) and reasons != [] and Enum.all?(reasons, &is_atom/1) do
+      raise ArgumentError,
+            ":reasons for #{inspect(module)} must be a non-empty list of atoms, " <>
+              "got: #{inspect(reasons)}"
+    end
+
+    if not is_nil(default_reason) and default_reason not in reasons do
+      raise ArgumentError,
+            ":default_reason #{inspect(default_reason)} for #{inspect(module)} is not one of " <>
+              "the declared :reasons #{inspect(reasons)}"
+    end
+
+    :ok
+  end
+
+  # Generate the per-module reasons accessor used by `validate_reason!/1`, plus a
+  # `reason` type enumerating the declared reasons. Modules without declared
+  # reasons return `nil` (unrestricted) and get no `reason` type.
+  defp define_reasons(nil) do
+    quote do
+      @doc false
+      def __errata_valid_reasons__, do: nil
+    end
+  end
+
+  defp define_reasons(reasons) when is_list(reasons) do
+    [first | rest] = reasons
+    reason_type = Enum.reduce(rest, first, fn r, acc -> quote(do: unquote(acc) | unquote(r)) end)
+
+    quote do
+      @typedoc """
+      The set of reasons declared as valid for this error type.
+      """
+      @type reason :: unquote(reason_type)
+
+      @doc false
+      def __errata_valid_reasons__, do: unquote(reasons)
     end
   end
 

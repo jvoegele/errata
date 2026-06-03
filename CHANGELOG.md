@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Context enrichment: `Errata.put_context/3` and `Errata.merge_context/2` add to
   an error's `:context` as it propagates, so intermediate layers can attach
   context the creation site did not have without rebuilding the struct. (#18)
+- Declared reasons: error types can now enumerate their valid reasons with the
+  `:reasons` option (`use Errata.DomainError, reasons: [...]`). Creating an error
+  with a reason outside the declared set raises an `ArgumentError` (a `nil` reason
+  is always allowed); a `:default_reason`, if given, must be one of the declared
+  reasons; and a `reason/0` type enumerating them is generated for the docs. (#20)
 
 ## [0.10.0] - 2026-06-02
 

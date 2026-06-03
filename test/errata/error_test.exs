@@ -4,6 +4,14 @@ defmodule TestError do
     default_reason: :testing_123
 end
 
+defmodule ReasonedError do
+  use Errata.DomainError, reasons: [:alpha, :beta, :gamma]
+end
+
+defmodule DefaultReasonedError do
+  use Errata.DomainError, default_reason: :alpha, reasons: [:alpha, :beta]
+end
+
 defmodule Errata.ErrorTest do
   @moduledoc "Tests for the Errata.Error module"
 
@@ -212,6 +220,72 @@ defmodule Errata.ErrorTest do
     test "exception message omits reason when it is nil" do
       assert_raise TestError, "this is only a test", fn ->
         raise TestError, reason: nil, context: %{foo: "bar"}
+      end
+    end
+  end
+
+  describe "declared :reasons" do
+    require ReasonedError
+
+    test "accepts a declared reason" do
+      assert ReasonedError.new(reason: :beta).reason == :beta
+      assert ReasonedError.create(reason: :gamma).reason == :gamma
+    end
+
+    test "allows a nil (unspecified) reason" do
+      assert ReasonedError.new().reason == nil
+      assert ReasonedError.new(reason: nil).reason == nil
+    end
+
+    test "rejects an undeclared reason from new/1" do
+      assert_raise ArgumentError, ~r/invalid reason :delta.*Declared reasons are/, fn ->
+        ReasonedError.new(reason: :delta)
+      end
+    end
+
+    test "rejects an undeclared reason from create/1" do
+      assert_raise ArgumentError, ~r/invalid reason :delta/, fn ->
+        ReasonedError.create(reason: :delta)
+      end
+    end
+
+    test "rejects an undeclared reason from wrap/2" do
+      assert_raise ArgumentError, ~r/invalid reason :delta/, fn ->
+        ReasonedError.wrap(%RuntimeError{}, reason: :delta)
+      end
+    end
+
+    test "rejects an undeclared reason from raise/2" do
+      assert_raise ArgumentError, ~r/invalid reason :delta/, fn ->
+        raise ReasonedError, reason: :delta
+      end
+    end
+
+    test "a declared :default_reason is applied and is valid by construction" do
+      assert DefaultReasonedError.new().reason == :alpha
+    end
+
+    test "types without declared reasons remain unrestricted" do
+      assert TestError.new(reason: :anything_at_all).reason == :anything_at_all
+    end
+
+    test "rejects a non-atom-list :reasons at compile time" do
+      assert_raise ArgumentError, ~r/must be a non-empty list of atoms/, fn ->
+        Code.compile_string("""
+        defmodule Errata.ErrorTest.BadReasons do
+          use Errata.DomainError, reasons: [:a, "b"]
+        end
+        """)
+      end
+    end
+
+    test "rejects a :default_reason not among :reasons at compile time" do
+      assert_raise ArgumentError, ~r/default_reason :nope.*is not one of the declared/, fn ->
+        Code.compile_string("""
+        defmodule Errata.ErrorTest.BadDefault do
+          use Errata.DomainError, default_reason: :nope, reasons: [:a, :b]
+        end
+        """)
       end
     end
   end

@@ -148,6 +148,8 @@ Each `use` accepts a few options:
 
   * `:default_message` — the `:message` to use when none is given
   * `:default_reason` — the `:reason` to use when none is given
+  * `:reasons` — an optional list of atoms enumerating the valid reasons for the
+    type (see [Choosing between an error type and a reason](#choosing-between-an-error-type-and-a-reason))
 
 Whichever module you use, the resulting error type is an exception struct that
 conforms to the `t:Errata.error/0` type, implements the `Errata.Error`
@@ -430,6 +432,25 @@ PaymentDeclined.create(reason: :fraud_suspected)
 Conversely, a `:reason` that merely restates the type name (such as
 `OrderNotFound.create(reason: :order_not_found)`) adds no information and can be
 omitted.
+
+When a type's reasons form a known, closed set, you can **declare them** with the
+`:reasons` option. Errata then rejects any reason outside the set (a `nil`,
+unspecified reason is always allowed) and generates a `reason/0` type enumerating
+them, so the valid reasons are part of the type's documented contract:
+
+```elixir
+defmodule MyApp.Orders.PaymentDeclined do
+  use Errata.DomainError,
+    reasons: [:insufficient_funds, :fraud_suspected, :card_expired]
+end
+
+PaymentDeclined.new(reason: :insufficient_funds)   # ok
+PaymentDeclined.new(reason: :mistyped)             # ** (ArgumentError) invalid reason :mistyped ...
+```
+
+This turns the guidance above from a convention into something the compiler-adjacent
+tooling and your tests can enforce. If you also set `:default_reason`, it must be one
+of the declared `:reasons`.
 
 ## Why Errata?
 
