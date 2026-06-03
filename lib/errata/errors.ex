@@ -132,11 +132,17 @@ defmodule Errata.Errors do
     "#{message}: #{inspect(reason)}"
   end
 
-  @doc false
-  def to_json(error, opts) do
-    error
-    |> to_map()
-    |> Errata.JSON.encode(opts)
+  # Encode an error to JSON via the Jason backend. Only compiled when Jason is
+  # available; the generated `Jason.Encoder` impl (and therefore this function)
+  # is only emitted in that case, so the reference to `Jason.Encode` never
+  # produces an "undefined module" warning on Jason-less builds.
+  if Code.ensure_loaded?(Jason) do
+    @doc false
+    def to_json(error, opts) do
+      error
+      |> to_map()
+      |> Jason.Encode.map(opts)
+    end
   end
 
   @doc false
@@ -152,7 +158,7 @@ defmodule Errata.Errors do
     exception_def = define_exception(kind, opts)
     errata_error_impl = define_errata_error_callbacks()
     string_chars_impl = define_string_chars_impl(module_name)
-    jason_encoder_impl = define_jason_encoder_impl(module_name)
+    json_encoder_impls = define_json_encoder_impls(module_name)
 
     quote do
       unquote(attribute_defs)
@@ -162,7 +168,7 @@ defmodule Errata.Errors do
       unquote(exception_def)
       unquote(errata_error_impl)
       unquote(string_chars_impl)
-      unquote(jason_encoder_impl)
+      unquote(json_encoder_impls)
     end
   end
 
@@ -395,13 +401,39 @@ defmodule Errata.Errors do
     end
   end
 
-  defp define_jason_encoder_impl(error_module) do
-    quote do
-      defimpl Jason.Encoder, for: unquote(error_module) do
-        def encode(errata_error, opts) do
-          Errata.Errors.to_json(errata_error, opts)
+  # Emit a JSON encoder protocol impl for each backend that is available at
+  # compile time. On Elixir 1.18+ this includes the built-in `JSON.Encoder`; on
+  # any build where Jason is present (it is an optional dependency) it includes
+  # `Jason.Encoder`. Both encode the same `to_map/1` shape, so the JSON output is
+  # identical regardless of which backend a caller uses.
+  defp define_json_encoder_impls(error_module) do
+    jason_impl =
+      if Code.ensure_loaded?(Jason) do
+        quote do
+          defimpl Jason.Encoder, for: unquote(error_module) do
+            def encode(errata_error, opts) do
+              Errata.Errors.to_json(errata_error, opts)
+            end
+          end
         end
       end
+
+    native_impl =
+      if Code.ensure_loaded?(JSON) do
+        quote do
+          defimpl JSON.Encoder, for: unquote(error_module) do
+            def encode(errata_error, encoder) do
+              errata_error
+              |> Errata.Errors.to_map()
+              |> JSON.protocol_encode(encoder)
+            end
+          end
+        end
+      end
+
+    quote do
+      unquote(jason_impl)
+      unquote(native_impl)
     end
   end
 end

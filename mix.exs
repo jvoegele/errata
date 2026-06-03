@@ -1,7 +1,7 @@
 defmodule Errata.MixProject do
   use Mix.Project
 
-  @version "1.0.0"
+  @version "1.1.0"
   @source_url "https://github.com/jvoegele/errata"
 
   def project do
@@ -44,7 +44,7 @@ defmodule Errata.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:jason, ">= 1.3.0"},
+      {:jason, ">= 1.3.0", optional: true},
       {:telemetry, "~> 1.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

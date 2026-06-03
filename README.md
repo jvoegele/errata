@@ -40,7 +40,8 @@ With Errata you can:
   * **Classify errors** as domain, infrastructure, or general, and branch on
     that classification at system boundaries with the `Errata` guards.
   * **Serialize errors automatically** — every error type implements the
-    `String.Chars` and `Jason.Encoder` protocols.
+    `String.Chars` protocol and, depending on what's available, the built-in
+    `JSON.Encoder` (Elixir 1.18+) and/or `Jason.Encoder` protocols.
   * **Report errors at a boundary** — log an error with its fields as structured
     metadata, or emit a telemetry event for your own handler to forward to
     Sentry, a metrics backend, or wherever errors should go.
@@ -597,6 +598,28 @@ def deps do
   ]
 end
 ```
+
+### JSON encoding
+
+Errata encodes errors to JSON through whichever backend is available, so you
+generally don't need to configure anything:
+
+  * On **Elixir 1.18 and later**, error types implement the built-in
+    `JSON.Encoder` protocol, so `JSON.encode!(error)` works with no extra
+    dependencies.
+  * If [`jason`](https://hex.pm/packages/jason) is present, error types also
+    implement `Jason.Encoder`, so `Jason.encode!(error)` works as before. Jason
+    is an *optional* dependency — add it explicitly if you want it (for example
+    to use Jason on Elixir versions earlier than 1.18, or alongside the built-in
+    encoder):
+
+    ```elixir
+    {:jason, "~> 1.4"}
+    ```
+
+Both backends produce the same JSON shape. If neither is available (Elixir
+older than 1.18 without Jason), errors can still be converted to a plain map
+with `Errata.to_map/1`, which you can encode however you like.
 
 Documentation is generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
 and published on [HexDocs](https://hexdocs.pm/errata/index.html).
