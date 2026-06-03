@@ -275,6 +275,71 @@ defmodule ErrataTest do
     end
   end
 
+  describe "put_context/3" do
+    test "adds a key to an existing context map" do
+      error = TestDomainError.new(reason: :boom, context: %{a: 1})
+      assert Errata.put_context(error, :b, 2).context == %{a: 1, b: 2}
+    end
+
+    test "overwrites an existing key" do
+      error = TestDomainError.new(context: %{a: 1})
+      assert Errata.put_context(error, :a, 2).context == %{a: 2}
+    end
+
+    test "initializes the context when it is nil" do
+      error = TestDomainError.new(reason: :boom)
+      assert error.context == nil
+      assert Errata.put_context(error, :a, 1).context == %{a: 1}
+    end
+
+    test "leaves the rest of the error unchanged" do
+      error = TestDomainError.new(reason: :boom, context: %{a: 1})
+      updated = Errata.put_context(error, :b, 2)
+
+      assert updated.reason == :boom
+      assert updated.__struct__ == TestDomainError
+      assert is_domain_error(updated)
+    end
+
+    test "raises ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn ->
+        Errata.put_context(:not_an_error, :a, 1)
+      end
+    end
+  end
+
+  describe "merge_context/2" do
+    test "merges a map into an existing context" do
+      error = TestDomainError.new(context: %{a: 1})
+      assert Errata.merge_context(error, %{b: 2, c: 3}).context == %{a: 1, b: 2, c: 3}
+    end
+
+    test "the given context wins on key collisions" do
+      error = TestDomainError.new(context: %{a: 1, b: 2})
+      assert Errata.merge_context(error, %{b: 99}).context == %{a: 1, b: 99}
+    end
+
+    test "initializes the context when it is nil" do
+      error = TestDomainError.new(reason: :boom)
+      assert error.context == nil
+      assert Errata.merge_context(error, %{a: 1}).context == %{a: 1}
+    end
+
+    test "raises ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn ->
+        Errata.merge_context(:not_an_error, %{a: 1})
+      end
+    end
+
+    test "raises ArgumentError when the context is not a map" do
+      error = TestDomainError.new()
+
+      assert_raise ArgumentError, ~r/expected a map of context/, fn ->
+        Errata.merge_context(error, a: 1)
+      end
+    end
+  end
+
   describe "display_message/1" do
     test "returns the bare :message, without the reason suffix" do
       error = TestDomainError.new(message: "human readable", reason: :some_reason)

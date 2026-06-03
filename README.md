@@ -266,6 +266,31 @@ Caused by: ** (RuntimeError) the database connection dropped
     (stdlib 5.2) ...
 ```
 
+## Enriching context as an error propagates
+
+An error's `context` is usually captured where the error is created, but a
+structured error often travels up through several layers before it reaches a
+boundary — and those intermediate layers frequently know context that the
+creation site did not: the `user_id` known in one place, the `request_id` known
+in another. `Errata.put_context/3` and `Errata.merge_context/2` let you _enrich_
+an error's context as it propagates, without rebuilding the struct by hand.
+
+This pairs naturally with returning errors as values through a `with` chain:
+each layer attaches what it knows and lets the error continue on its way.
+
+```elixir
+iex> alias MyApp.Orders.OrderNotFound
+iex> OrderNotFound.new(reason: :not_found, context: %{order_id: 42})
+...> |> Errata.put_context(:user_id, 7)
+...> |> Errata.merge_context(%{order_id: 99})
+...> |> Map.fetch!(:context)
+%{order_id: 99, user_id: 7}
+```
+
+`put_context/3` sets a single key; `merge_context/2` merges a whole map, with the
+given values winning on any key collision. Either one initializes the `context`
+map if the error did not have one yet.
+
 ## Handling errors
 
 Errata errors are standard Elixir exceptions, so they can be rescued like any
