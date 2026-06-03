@@ -54,6 +54,11 @@ defmodule Errata.Error do
       allowed, and a `:default_reason`, if also given, must be one of the declared `:reasons`.
       Declaring reasons also generates a `reason/0` type enumerating them, so the valid reasons are
       visible in the generated documentation.
+    * `:http_status` - the HTTP status code to associate with this error type, returned by the
+      generated `http_status/1` function (and `Errata.http_status/1`). When omitted, the status
+      defaults off the error's kind (`:domain` → `422`, `:infrastructure` → `503`, `:general` →
+      `500`). The generated `http_status/1` is overridable, so it can instead be defined to compute
+      a status from the error's `:reason` or `:context`.
     * `:kind` - the "kind" of Errata error to create, one of `:domain`, `:infrastructure`, or
       `:general` (which is the default)
 

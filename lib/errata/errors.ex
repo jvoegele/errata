@@ -148,6 +148,7 @@ defmodule Errata.Errors do
     attribute_defs = define_attributes(module_name)
     type_def = define_type(kind)
     reasons_def = define_reasons(reasons)
+    http_status_def = define_http_status(kind, module_name, opts)
     exception_def = define_exception(kind, opts)
     errata_error_impl = define_errata_error_callbacks()
     string_chars_impl = define_string_chars_impl(module_name)
@@ -157,12 +158,58 @@ defmodule Errata.Errors do
       unquote(attribute_defs)
       unquote(type_def)
       unquote(reasons_def)
+      unquote(http_status_def)
       unquote(exception_def)
       unquote(errata_error_impl)
       unquote(string_chars_impl)
       unquote(jason_encoder_impl)
     end
   end
+
+  # Generate the overridable `http_status/1` function. It defaults off the error's
+  # kind (or the `:http_status` option) and is marked `defoverridable` so callers
+  # can override it to compute a status from the error's `:reason` or `:context`.
+  # It is intentionally a plain function rather than a behaviour callback, so that
+  # user overrides do not trip Elixir's `@impl` consistency warnings.
+  defp define_http_status(kind, module_name, opts) do
+    status = http_status_value!(kind, module_name, opts)
+
+    doc = """
+    Returns the HTTP status code associated with this error (`#{status}` by default).
+
+    The default is derived from the error's kind, or set via the `:http_status`
+    option. Override this function to compute a status from the error's `:reason`
+    or `:context`. See also `Errata.http_status/1`.
+    """
+
+    quote do
+      @doc unquote(doc)
+      @spec http_status(Errata.error()) :: non_neg_integer()
+      def http_status(error)
+      def http_status(_error), do: unquote(status)
+
+      defoverridable http_status: 1
+    end
+  end
+
+  defp http_status_value!(kind, module_name, opts) do
+    case Keyword.get(opts, :http_status) do
+      nil ->
+        default_http_status(kind)
+
+      status when is_integer(status) and status in 100..599 ->
+        status
+
+      other ->
+        raise ArgumentError,
+              ":http_status for #{inspect(module_name)} must be an integer HTTP status code " <>
+                "(100..599), got: #{inspect(other)}"
+    end
+  end
+
+  defp default_http_status(:domain), do: 422
+  defp default_http_status(:infrastructure), do: 503
+  defp default_http_status(:general), do: 500
 
   # Validate the `:reasons` option at the `use` site (compile time). When given,
   # it must be a non-empty list of atoms, and any `:default_reason` must be one

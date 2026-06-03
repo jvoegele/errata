@@ -355,6 +355,37 @@ defmodule Errata do
   end
 
   @doc """
+  Returns the HTTP status code associated with `error`.
+
+  This delegates to the error module's generated `http_status/1` function, which
+  defaults off the error's kind — `:domain` errors map to `422`, `:infrastructure`
+  errors to `503`, and `:general` errors to `500`. A specific status can be set
+  per type with the `:http_status` option to `use Errata.Error` (and friends), or
+  by overriding `http_status/1` to compute a status from the error's `:reason` or
+  `:context`.
+
+  This lets a boundary — such as a Phoenix fallback controller — map any Errata
+  error to a response status without knowing its specific type:
+
+      def call(conn, {:error, error}) when Errata.is_error(error) do
+        conn
+        |> put_status(Errata.http_status(error))
+        |> put_view(MyApp.ErrorView)
+        |> render("error.json", error: error)
+      end
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec http_status(error()) :: non_neg_integer()
+  def http_status(error) when is_error(error) do
+    error.__struct__.http_status(error)
+  end
+
+  def http_status(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
   Logs `error` at the given `level` (default `:error`) with its structured fields
   attached as Logger metadata.
 

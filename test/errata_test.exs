@@ -354,6 +354,18 @@ defmodule ErrataTest do
     end
   end
 
+  describe "http_status/1" do
+    test "delegates to the per-module status, defaulting off kind" do
+      assert Errata.http_status(TestDomainError.new()) == 422
+      assert Errata.http_status(TestInfrastructureError.new()) == 503
+      assert Errata.http_status(TestGeneralError.new()) == 500
+    end
+
+    test "raises ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.http_status(:nope) end
+    end
+  end
+
   describe "report/2" do
     setup do
       ref = make_ref()
