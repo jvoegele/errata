@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   `JSON` encoder. This is backward compatible — anyone who depends on
   `Jason.encode!(error)` already has Jason in their own dependencies. (#30)
 
+### Upgrading
+- If your project calls `Jason` directly but relied on Errata to pull it in
+  transitively, add `{:jason, "~> 1.4"}` to your own dependencies, since Errata
+  no longer forces it into your dependency tree. On Elixir 1.18+ you can instead
+  use the built-in `JSON` module and drop the Jason dependency entirely.
+
 ## [1.0.0] - 2026-06-03
 
 First stable release. As of 1.0.0 the public API — the error struct shape, the
