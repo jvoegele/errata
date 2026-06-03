@@ -368,4 +368,36 @@ defmodule Errata.ErrorTest do
                Exception.format_mfa(current_module, current_function, current_function_arity)
     end
   end
+
+  # The built-in JSON module (and JSON.Encoder protocol) is only available on
+  # Elixir 1.18+; this block compiles away on earlier versions. It asserts the
+  # native backend produces the same JSON shape as the Jason backend above.
+  if Code.ensure_loaded?(JSON) do
+    describe "JSON.Encoder protocol implementation (built-in JSON):" do
+      require TestError
+
+      test "produces the same JSON shape as the Jason backend" do
+        error =
+          TestError.create(
+            reason: :to_believe,
+            context: %{meta: "data", danger: {:error, "tuple"}, pid: self()}
+          )
+
+        decoded = error |> JSON.encode!() |> JSON.decode!()
+
+        assert decoded["message"] == error.message
+        assert decoded["reason"] == to_string(error.reason)
+
+        assert %{"meta" => "data", "danger" => ["error", "tuple"], "pid" => pid_string} =
+                 decoded["context"]
+
+        assert pid_string =~ ~r(#PID<\d+\.\d+\.\d+>)
+
+        assert %{"file" => file, "module" => module} = decoded["env"]
+        assert file =~ ~r/error_test.exs$/
+        assert module == inspect(__MODULE__)
+        refute module =~ "Elixir."
+      end
+    end
+  end
 end

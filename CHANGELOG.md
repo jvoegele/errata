@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.1.0]
+
+### Added
+- Native JSON support: on Elixir 1.18 and later, every error type now implements
+  the built-in `JSON.Encoder` protocol, so `JSON.encode!(error)` works with no
+  third-party dependencies. The built-in and Jason backends produce the same JSON
+  shape. (#30)
+
+### Changed
+- `jason` is now an *optional* dependency. Projects that have Jason continue to
+  get a generated `Jason.Encoder` implementation exactly as before; projects on
+  Elixir 1.18+ that don't use Jason can now drop it and rely on the built-in
+  `JSON` encoder. This is backward compatible — anyone who depends on
+  `Jason.encode!(error)` already has Jason in their own dependencies. (#30)
+
+### Upgrading
+- If your project calls `Jason` directly but relied on Errata to pull it in
+  transitively, add `{:jason, "~> 1.4"}` to your own dependencies, since Errata
+  no longer forces it into your dependency tree. On Elixir 1.18+ you can instead
+  use the built-in `JSON` module and drop the Jason dependency entirely.
+
 ## [1.0.0] - 2026-06-03
 
 First stable release. As of 1.0.0 the public API — the error struct shape, the
