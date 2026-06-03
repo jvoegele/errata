@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Context enrichment: `Errata.put_context/3` and `Errata.merge_context/2` add to
+  an error's `:context` as it propagates, so intermediate layers can attach
+  context the creation site did not have without rebuilding the struct. (#18)
+
 ## [0.10.0] - 2026-06-02
 
 ### Added

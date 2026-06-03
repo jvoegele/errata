@@ -190,6 +190,70 @@ defmodule Errata do
   end
 
   @doc """
+  Returns a copy of `error` with `value` stored under `key` in its `:context` map.
+
+  Context is normally set once, at the site where an error is created. But a
+  structured error often travels up through several layers before reaching a
+  boundary, and intermediate layers frequently know context that the creation
+  site did not (the `user_id` known here, the `request_id` known there). Use
+  `put_context/3` (or `merge_context/2`) to _enrich_ an error's context as it
+  propagates, without rebuilding the struct by hand.
+
+  If the error has no context yet (`nil`), it is initialized to a map. An
+  existing value under `key` is overwritten.
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> error = OrderNotFound.new(reason: :not_found, context: %{order_id: 42})
+      iex> Errata.put_context(error, :user_id, 7).context
+      %{order_id: 42, user_id: 7}
+
+  A typical use is enriching an error as it propagates through a `with` chain:
+
+      with {:error, err} <- fetch_order(id) do
+        {:error, Errata.put_context(err, :user_id, current_user_id)}
+      end
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec put_context(error(), term(), term()) :: error()
+  def put_context(error, key, value) when is_error(error) do
+    %{error | context: Map.put(error.context || %{}, key, value)}
+  end
+
+  def put_context(other, _key, _value) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Returns a copy of `error` with the key/value pairs from `context` merged into
+  its `:context` map.
+
+  Like `put_context/3`, but merges an entire map at once. On key collisions, the
+  values in the given `context` win (last-write-wins). If the error has no
+  context yet (`nil`), it is initialized from `context`.
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> error = OrderNotFound.new(reason: :not_found, context: %{order_id: 42})
+      iex> Errata.merge_context(error, %{user_id: 7, order_id: 99}).context
+      %{order_id: 99, user_id: 7}
+
+  Raises an `ArgumentError` if `error` is not an Errata error, or if `context` is
+  not a map.
+  """
+  @spec merge_context(error(), map()) :: error()
+  def merge_context(error, context) when is_error(error) and is_map(context) do
+    %{error | context: Map.merge(error.context || %{}, context)}
+  end
+
+  def merge_context(error, context) when is_error(error) do
+    raise ArgumentError, "expected a map of context to merge, got: #{inspect(context)}"
+  end
+
+  def merge_context(other, _context) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
   Returns the immediate cause wrapped by `error`, or `nil` if it has none.
 
   The cause is the original error, exception, or value that was wrapped when the
