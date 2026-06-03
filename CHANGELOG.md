@@ -4,7 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-06-03
+
+First stable release. As of 1.0.0 the public API — the error struct shape, the
+`Errata` guards and helper functions, the generated `Errata.Error` callbacks, and
+the `to_map/1` / JSON and `[:errata, :error]` telemetry shapes — is covered by
+[Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
 ### Added
 - Context enrichment: `Errata.put_context/3` and `Errata.merge_context/2` add to

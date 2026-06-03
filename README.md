@@ -384,7 +384,9 @@ iex> try do
 ...>     {:specific, e.reason}
 ...>
 ...>   e ->
-...>     if Errata.is_error(e), do: {:errata, e.reason}, else: {:other, e}
+...>     # `Map.fetch!/2` reads the field without tripping the Elixir 1.18
+...>     # type-checker warning that `e.reason` would (see the note below).
+...>     if Errata.is_error(e), do: {:errata, Map.fetch!(e, :reason)}, else: {:other, e}
 ...> end
 {:errata, :not_found}
 ```
@@ -401,6 +403,28 @@ iex> case {:error, OrderNotFound.new(reason: :not_found)} do
 ...> end
 {:errata, :not_found}
 ```
+
+> #### Reading fields after a structural guard on Elixir 1.18+ {: .info}
+>
+> Errata's guards (`Errata.is_error/1` and friends) recognize errors
+> _structurally_, which Elixir 1.18's type checker cannot see through. So when a
+> variable is narrowed only by such a guard — or by a bare `rescue e ->`, which
+> types `e` as an exception with unknown fields — reading a field directly with
+> `e.reason` raises a compile-time warning (`unknown key .reason`). The code is
+> correct; the checker simply cannot prove the field exists.
+>
+> Two ways to avoid the warning:
+>
+>   * **Match the specific error type** when you need its fields
+>     (`%OrderNotFound{reason: reason} = e`); the checker understands this and it
+>     is the idiomatic choice in domain logic.
+>   * **Read the field with `Map.fetch!/2`** (as in the `rescue` example above)
+>     when you are handling errors generically by kind and only have the
+>     structural guard to go on.
+>
+> Note that the value-style `case` example does _not_ need this: a value matched
+> out of an `{:error, e}` tuple is not narrowed to a struct type, so `e.reason`
+> there is warning-free.
 
 ### Mapping errors to HTTP status codes
 
@@ -569,7 +593,7 @@ Add `errata` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:errata, "~> 0.10.0"}
+    {:errata, "~> 1.0"}
   ]
 end
 ```
