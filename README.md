@@ -402,6 +402,36 @@ iex> case {:error, OrderNotFound.new(reason: :not_found)} do
 {:errata, :not_found}
 ```
 
+### Mapping errors to HTTP status codes
+
+At an HTTP boundary you often want to translate an error into a response status.
+Every Errata error has a generated `http_status/1` function whose default is
+derived from the error's kind — `:domain` errors map to `422`, `:infrastructure`
+errors to `503`, and `:general` errors to `500`. Set a specific status per type
+with the `:http_status` option, or override `http_status/1` to compute one from
+the error's `reason` or `context`:
+
+```elixir
+defmodule MyApp.Orders.OrderNotFound do
+  use Errata.DomainError, http_status: 404
+end
+```
+
+`Errata.http_status/1` returns the status for _any_ Errata error without needing
+to know its specific type, which is convenient in a Phoenix fallback controller:
+
+```elixir
+def call(conn, {:error, error}) when Errata.is_error(error) do
+  conn
+  |> put_status(Errata.http_status(error))
+  |> put_view(MyApp.ErrorView)
+  |> render("error.json", error: error)
+end
+```
+
+This keeps Errata free of any web-framework dependency: it hands you the status
+code, and the framework glue stays in your application.
+
 ### Rendering an error for users
 
 `Exception.message/1` (and the `String.Chars` implementation) return a

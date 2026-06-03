@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   logs), providing a vendor-neutral seam for forwarding errors to Sentry, metrics,
   etc. via a telemetry handler in your application. Adds a `telemetry ~> 1.0`
   dependency. (#19)
+- HTTP status mapping: each error type now has a generated, overridable
+  `http_status/1` function (and a matching `Errata.http_status/1`) that defaults
+  off the error's kind (`:domain` → `422`, `:infrastructure` → `503`, `:general`
+  → `500`). Set a specific status with the `:http_status` option, or override the
+  function to compute one from the error. No web-framework dependency is added. (#21)
 
 ## [0.10.0] - 2026-06-02
 

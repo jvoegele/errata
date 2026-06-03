@@ -12,6 +12,17 @@ defmodule DefaultReasonedError do
   use Errata.DomainError, default_reason: :alpha, reasons: [:alpha, :beta]
 end
 
+defmodule StatusOverrideError do
+  use Errata.DomainError, http_status: 404
+end
+
+defmodule DynamicStatusError do
+  use Errata.DomainError, reasons: [:missing, :conflict]
+  def http_status(%{reason: :missing}), do: 404
+  def http_status(%{reason: :conflict}), do: 409
+  def http_status(_error), do: 422
+end
+
 defmodule Errata.ErrorTest do
   @moduledoc "Tests for the Errata.Error module"
 
@@ -284,6 +295,35 @@ defmodule Errata.ErrorTest do
         Code.compile_string("""
         defmodule Errata.ErrorTest.BadDefault do
           use Errata.DomainError, default_reason: :nope, reasons: [:a, :b]
+        end
+        """)
+      end
+    end
+  end
+
+  describe "http_status/1" do
+    test "defaults off the error kind" do
+      # TestError is a :general error
+      assert TestError.http_status(TestError.new()) == 500
+      # ReasonedError is a :domain error
+      assert ReasonedError.http_status(ReasonedError.new()) == 422
+    end
+
+    test "the :http_status option overrides the kind default" do
+      assert StatusOverrideError.http_status(StatusOverrideError.new()) == 404
+    end
+
+    test "can be overridden to compute a status from the error" do
+      assert DynamicStatusError.http_status(DynamicStatusError.new(reason: :missing)) == 404
+      assert DynamicStatusError.http_status(DynamicStatusError.new(reason: :conflict)) == 409
+      assert DynamicStatusError.http_status(DynamicStatusError.new()) == 422
+    end
+
+    test "rejects an out-of-range :http_status at compile time" do
+      assert_raise ArgumentError, ~r/must be an integer HTTP status code/, fn ->
+        Code.compile_string("""
+        defmodule Errata.ErrorTest.BadStatus do
+          use Errata.DomainError, http_status: 999_999
         end
         """)
       end
