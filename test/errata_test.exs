@@ -362,7 +362,7 @@ defmodule ErrataTest do
     end
 
     test "raises ArgumentError for non-Errata values" do
-      assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.http_status(:nope) end
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.http_status(nil) end
     end
   end
 
