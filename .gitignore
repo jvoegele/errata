@@ -33,3 +33,6 @@ errata-*.tar
 # Dialyzer PLT files (built/cached in CI)
 /priv/plts/*.plt
 /priv/plts/*.plt.hash
+
+CLAUDE.md
+/.claude/
