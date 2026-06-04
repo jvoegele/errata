@@ -137,6 +137,53 @@ defmodule Errata do
   end
 
   @doc """
+  Wraps `cause` in a new error of the given `error_module`, capturing the current
+  `__ENV__` and stacktrace into the `:env` field.
+
+  This is a convenience equivalent to the per-module `c:Errata.Error.wrap/2`
+  macro, but it lives on the `Errata` module. As with `create/2`, you typically
+  already `require Errata` (for the guards above), so you can `alias` your error
+  modules and call `Errata.wrap/3` for any of them without a separate `require`
+  for each error type:
+
+      defmodule MyApp.Orders do
+        require Errata
+        alias MyApp.Orders.OrderNotFound
+
+        def fetch_order(id) do
+          try do
+            external_lookup!(id)
+          rescue
+            e ->
+              {:error,
+               Errata.wrap(OrderNotFound, e, stacktrace: __STACKTRACE__, reason: :lookup_failed)}
+          end
+        end
+      end
+
+  The original error, exception, or value is stored as the new error's `:cause`;
+  retrieve it with `Errata.cause/1` (or follow the chain with
+  `Errata.root_cause/1`). The `opts` are the same as for the per-module
+  `c:Errata.Error.wrap/2` macro: the standard error params (`:reason`,
+  `:message`, `:context`) plus `:stacktrace` and `:kind`, which describe the
+  wrapped cause.
+  """
+  defmacro wrap(error_module, cause, opts \\ []) do
+    quote do
+      {:current_stacktrace, [_process_info_call | stacktrace]} =
+        Process.info(self(), :current_stacktrace)
+
+      Errata.Errors.wrap(
+        unquote(error_module),
+        unquote(cause),
+        unquote(opts),
+        __ENV__,
+        stacktrace
+      )
+    end
+  end
+
+  @doc """
   Converts any Errata error to a plain, JSON-encodable map.
 
   This is the generic counterpart to the per-type `c:Errata.Error.to_map/1`

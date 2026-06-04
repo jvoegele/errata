@@ -257,6 +257,21 @@ iex> Errata.cause(error)
 %RuntimeError{message: "the database connection dropped"}
 ```
 
+Like `create/1`, the `wrap/2` macro must be `require`d for each error module. The
+`Errata.wrap/3` macro is the convenient alternative — it wraps a cause in an error
+of _any_ type without a separate `require` for each one. Since you typically
+already `require Errata`, you can `alias` your error modules and call it directly:
+
+```elixir
+iex> require Errata
+iex> alias MyApp.Orders.OrderNotFound
+iex> error = Errata.wrap(OrderNotFound, %RuntimeError{message: "boom"}, reason: :lookup_failed)
+iex> error.reason
+:lookup_failed
+iex> Errata.cause(error)
+%RuntimeError{message: "boom"}
+```
+
 The cause can be any term — another Errata error, a standard exception, or a
 plain value such as the `reason` from an `{:error, reason}` tuple. Retrieve the
 immediate cause with `Errata.cause/1`, or follow a chain of wrapped errors to

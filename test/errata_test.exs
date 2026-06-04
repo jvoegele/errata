@@ -188,6 +188,46 @@ defmodule ErrataTest do
     end
   end
 
+  describe "wrap/3" do
+    # As with `create/2`, only `require Errata` is needed (already done above) —
+    # no `require TestDomainError`. That is the point of this macro.
+    test "wraps the cause, sets params, and captures the current env" do
+      original = %RuntimeError{message: "boom"}
+      error = wrap(TestDomainError, original, reason: :boom, context: %{a: 1})
+
+      assert is_domain_error(error)
+      assert error.reason == :boom
+      assert error.context == %{a: 1}
+      assert Errata.cause(error) == original
+
+      assert %Errata.Env{module: __MODULE__, line: line, stacktrace: stacktrace} = error.env
+      assert is_integer(line)
+      assert is_list(stacktrace)
+    end
+
+    test "works with no opts" do
+      original = %RuntimeError{message: "boom"}
+      error = wrap(TestGeneralError, original)
+
+      assert is_error(error)
+      assert Errata.cause(error) == original
+      assert %Errata.Env{module: __MODULE__} = error.env
+    end
+
+    test "captures the cause stacktrace passed via :stacktrace" do
+      error =
+        try do
+          raise "the database connection dropped"
+        rescue
+          e -> wrap(TestDomainError, e, stacktrace: __STACKTRACE__, reason: :boom)
+        end
+
+      assert Errata.cause(error) == %RuntimeError{message: "the database connection dropped"}
+      assert %Errata.Cause{stacktrace: stacktrace} = error.cause
+      assert is_list(stacktrace) and stacktrace != []
+    end
+  end
+
   describe "to_map/1" do
     test "converts any Errata error to a map without knowing its module" do
       error = TestDomainError.new(reason: :boom, context: %{a: 1})
