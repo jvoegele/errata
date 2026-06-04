@@ -12,6 +12,9 @@ but replaces ad-hoc reasons and loosely structured exceptions with _named,
 structured error types_ that share a consistent shape and carry full contextual
 detail about what went wrong and where.
 
+Taken together, an application's Errata types form a kind of _errata sheet_ for
+the system: a deliberate, named catalogue of the ways it can fail.
+
 Each Errata error is an `Exception` struct with a well-defined set of fields:
 
   * `message` — a human-readable description of the error
