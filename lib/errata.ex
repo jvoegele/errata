@@ -103,6 +103,43 @@ defmodule Errata do
                   :erlang.map_get(:kind, term) == :infrastructure
 
   @doc """
+  Brings Errata's guards into scope and requires the module.
+
+  `use Errata` is the simplest way to set up a module that handles or creates
+  Errata errors. It is exactly equivalent to importing just the three guards:
+
+      import Errata, only: [is_error: 1, is_domain_error: 1, is_infrastructure_error: 1]
+
+  This makes `is_error/1`, `is_domain_error/1`, and `is_infrastructure_error/1`
+  available **unqualified** — including in `when` clauses and function heads — and,
+  because `import` implies `require`, also makes the `create/2` and `wrap/3`
+  macros callable in their qualified form (`Errata.create/2`, `Errata.wrap/3`).
+
+      defmodule MyApp.Orders.Boundary do
+        use Errata
+
+        def handle({:error, e}) when is_error(e), do: handle_errata_error(e)
+        def handle({:error, e}), do: handle_other_error(e)
+      end
+
+  Only the guards are imported. The rest of the `Errata` API stays qualified
+  (`Errata.to_map/1`, `Errata.put_context/3`, `Errata.report/2`, and so on),
+  which keeps generically named functions out of your module's namespace and
+  reads clearly at a boundary.
+
+  > #### Not the same as `use Errata.Error` {: .info}
+  >
+  > `use Errata` is for modules that _work with_ errors. To _define_ a new error
+  > type, `use Errata.Error` (or `Errata.DomainError` / `Errata.InfrastructureError`)
+  > instead.
+  """
+  defmacro __using__(_opts) do
+    quote do
+      import Errata, only: [is_error: 1, is_domain_error: 1, is_infrastructure_error: 1]
+    end
+  end
+
+  @doc """
   Creates an error of the given `error_module`, capturing the current `__ENV__`
   and stacktrace into the `:env` field.
 

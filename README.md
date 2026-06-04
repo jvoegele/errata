@@ -322,20 +322,31 @@ addition, Errata provides guards for recognizing and classifying its errors:
 - `Errata.is_domain_error/1` — true for domain errors
 - `Errata.is_infrastructure_error/1` — true for infrastructure errors
 
-Because the guards are macros, the `Errata` module must be `require`d (or
-`import`ed) to use them. `require Errata` lets you call them qualified, as
-`Errata.is_error(e)`. If you prefer to write them unqualified in `when` clauses
-and function heads, `import` just the guards:
+Because the guards are macros, the `Errata` module must be `require`d or
+`import`ed to use them. The simplest way is `use Errata`, which imports the three
+guards — so you can write them unqualified in `when` clauses and function heads —
+and, because `import` implies `require`, also makes the `Errata.create/2` and
+`Errata.wrap/3` macros callable:
+
+```elixir
+defmodule MyApp.Orders.Boundary do
+  use Errata
+
+  def handle({:error, e}) when is_error(e), do: handle_errata_error(e)
+  def handle({:error, e}), do: handle_other_error(e)
+end
+```
+
+`use Errata` brings only the guards into scope; the rest of the API stays
+qualified (`Errata.to_map/1`, `Errata.put_context/3`, and so on), which reads
+well at a boundary and avoids pulling generically named functions into your
+namespace. (Don't confuse it with `use Errata.Error` and friends, which _define_
+a new error type.) If you'd rather not `use` the module, the equivalent explicit
+form imports just the guards — which, again, also requires the module:
 
 ```elixir
 import Errata, only: [is_error: 1, is_domain_error: 1, is_infrastructure_error: 1]
-
-def handle({:error, e}) when is_error(e), do: ...
 ```
-
-Importing only the guards keeps the rest of the `Errata` API qualified
-(`Errata.to_map/1`, `Errata.put_context/3`, and so on), which reads well at a
-boundary and avoids pulling generically named functions into scope.
 
 The kind-based guards are especially useful at system boundaries — for example,
 translating domain errors into client errors (`4xx`) and infrastructure errors

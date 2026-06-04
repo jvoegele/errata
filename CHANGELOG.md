@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `use Errata` — a convenience macro for modules that handle or create Errata
+  errors. It imports the three guards (`is_error/1`, `is_domain_error/1`,
+  `is_infrastructure_error/1`) so they can be used unqualified in `when` clauses
+  and function heads, and (because `import` implies `require`) makes the
+  `Errata.create/2` and `Errata.wrap/3` macros callable. Only the guards are
+  imported; the rest of the API stays qualified. This is distinct from
+  `use Errata.Error`, which defines a new error type.
+
 ## [1.2.0] - 2026-06-04
 
 ### Added
