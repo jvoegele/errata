@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.0] - 2026-07-31
 
 ### Added
 - Stable external error codes. An error type can declare a `:code` (such as
@@ -39,9 +39,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `Errata.log/2` now logs at the error's `severity/1` when no level is given, and
   `Errata.report/2` with `log: true` does the same. Since severity is `:error`
   unless a type sets one, this is backward compatible for existing error types.
+  (#24)
 - `:code`, `:severity`, and `:retryable` are now included in the metadata emitted
   by `Errata.log/2` (as Logger metadata) and `Errata.report/2` (as top-level
   `[:errata, :error]` telemetry metadata), so handlers can route or alert on them.
+  (#22, #24)
 
 ### Fixed
 - The `t:Errata.error/0` type declared `env: Errata.Env.t()`, but an error created
