@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ### Added
+- Stable external error codes. An error type can declare a `:code` (such as
+  `"ORDER_NOT_FOUND"`) that is independent of its Elixir module name, giving
+  external consumers — API clients, i18n catalogs, support tooling — an
+  identifier that survives renaming or moving the module. Retrieve it with
+  `Errata.code/1` or the generated per-module `code/1`, which is overridable so a
+  type can derive a code from the error's `:reason` or `:context`. Codes are
+  opt-in with no default: a type that does not declare one returns `nil`, since
+  deriving a code from the module name would reintroduce the coupling the option
+  exists to break. (#22)
 - Severity and retryability classification on error types. (#24)
   - `Errata.severity/1` returns an error's severity as a `Logger` level, set per
     type with the `:severity` option. It defaults to `:error` for every kind, so
@@ -22,11 +31,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
     to the error struct or to the `to_map/1` / JSON shape.
 
 ### Changed
+- `Errata.to_map/1` (and therefore the JSON encoding) now includes a `code` key,
+  which is `null` for error types that do not declare a `:code`. This is additive
+  to the serialized shape — the key is always present, consistent with the
+  existing `message`, `cause`, and `env` keys, which are likewise emitted when
+  empty. Consumers that ignore unknown keys are unaffected. (#22)
 - `Errata.log/2` now logs at the error's `severity/1` when no level is given, and
   `Errata.report/2` with `log: true` does the same. Since severity is `:error`
   unless a type sets one, this is backward compatible for existing error types.
-- `:severity` and `:retryable` are now included in the metadata emitted by
-  `Errata.log/2` (as Logger metadata) and `Errata.report/2` (as top-level
+- `:code`, `:severity`, and `:retryable` are now included in the metadata emitted
+  by `Errata.log/2` (as Logger metadata) and `Errata.report/2` (as top-level
   `[:errata, :error]` telemetry metadata), so handlers can route or alert on them.
 
 ### Fixed

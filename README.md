@@ -157,6 +157,8 @@ Each `use` accepts a few options:
   * `:default_reason` — the `:reason` to use when none is given
   * `:reasons` — an optional list of atoms enumerating the valid reasons for the
     type (see [Choosing between an error type and a reason](#choosing-between-an-error-type-and-a-reason))
+  * `:code` — a stable external code for the type, independent of the module name
+    (see [Stable external error codes](#stable-external-error-codes))
   * `:http_status`, `:severity`, `:retryable` — classifications consumed at
     boundaries (see [Mapping errors to HTTP status codes](#mapping-errors-to-http-status-codes)
     and [Classifying errors: severity and retryability](#classifying-errors-severity-and-retryability))
@@ -503,6 +505,46 @@ end
 This keeps Errata free of any web-framework dependency: it hands you the status
 code, and the framework glue stays in your application.
 
+### Stable external error codes
+
+The only type identity `to_map/1` exposes is the module name
+(`"MyApp.Orders.OrderNotFound"`), which is an implementation detail: rename or
+move the module and the identifier your API clients match on changes with it.
+For consumers outside your codebase — API clients, i18n catalogs, support
+tooling — give the type a **stable external code** instead:
+
+```elixir
+defmodule MyApp.Orders.OrderNotFound do
+  use Errata.DomainError, code: "ORDER_NOT_FOUND"
+end
+```
+
+The code appears in `to_map/1` (and so in the JSON encoding) under the `code`
+key, and in the metadata emitted by `Errata.log/2` and `Errata.report/2`.
+`Errata.code/1` returns it for any Errata error.
+
+Codes are entirely opt-in and there is no default — a type that doesn't declare
+one returns `nil`, and Errata deliberately does not derive a code from the module
+name, since that would reintroduce the very coupling the code exists to avoid. A
+boundary that needs a code for every error should supply its own fallback:
+
+```elixir
+Errata.code(error) || "UNKNOWN"
+```
+
+Like the other generated functions, `code/1` is overridable, so a single error
+type can carry different codes per reason:
+
+```elixir
+defmodule MyApp.Auth.TokenInvalid do
+  use Errata.DomainError, reasons: [:expired, :revoked]
+
+  def code(%{reason: :expired}), do: "TOKEN_EXPIRED"
+  def code(%{reason: :revoked}), do: "TOKEN_REVOKED"
+  def code(_error), do: "TOKEN_INVALID"
+end
+```
+
 ### Classifying errors: severity and retryability
 
 Two further classifications are available on every error type, both following the
@@ -571,9 +613,9 @@ composable functions for this, and — deliberately — no integration with any
 particular external service.
 
 `Errata.log/2` logs an error's developer message, attaching its `reason`, `kind`,
-`severity`, `retryable`, `context`, and origin `env` as **Logger metadata** rather
-than flattening them into the message string, so they stay queryable in structured
-logging backends. With no level given it logs at the error's own severity, which
+`code`, `severity`, `retryable`, `context`, and origin `env` as **Logger metadata**
+rather than flattening them into the message string, so they stay queryable in
+structured logging backends. With no level given it logs at the error's own severity, which
 is `:error` unless the type sets one:
 
 ```elixir
@@ -595,9 +637,9 @@ Errata.report(error, metadata: %{request_id: request_id}, log: :warning)
 The event is `[:errata, :error]`, with measurements `%{system_time: _, count: 1}`
 (so [`Telemetry.Metrics`](https://hexdocs.pm/telemetry_metrics) counters work out
 of the box) and metadata carrying the full `:error` struct plus `:kind`,
-`:reason`, `:error_type`, `:severity`, `:retryable`, and `:context` as top-level
-keys — simple values that work directly as metric tags. A handler in your
-application wires it up:
+`:reason`, `:error_type`, `:code`, `:severity`, `:retryable`, and `:context` as
+top-level keys — simple values that work directly as metric tags. A handler in
+your application wires it up:
 
 ```elixir
 :telemetry.attach("myapp-errata", [:errata, :error], &MyApp.ErrorReporter.handle/4, nil)

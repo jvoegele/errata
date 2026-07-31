@@ -45,6 +45,10 @@ defmodule ErrataTest do
     use Errata.DomainError, severity: :warning
   end
 
+  defmodule TestCodedError do
+    use Errata.DomainError, code: "PAYMENT_DECLINED"
+  end
+
   defmodule NonErrataError do
     defexception [:message, :reason, :context, :env]
   end
@@ -410,6 +414,20 @@ defmodule ErrataTest do
     end
   end
 
+  describe "code/1" do
+    test "is nil when the error type declares no code" do
+      assert Errata.code(TestDomainError.new()) == nil
+    end
+
+    test "delegates to the per-module code" do
+      assert Errata.code(TestCodedError.new()) == "PAYMENT_DECLINED"
+    end
+
+    test "raises ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.code(nil) end
+    end
+  end
+
   describe "severity/1" do
     test "delegates to the per-module severity, defaulting to :error" do
       assert Errata.severity(TestDomainError.new()) == :error
@@ -466,8 +484,15 @@ defmodule ErrataTest do
       assert metadata.reason == :boom
       assert metadata.error_type == TestDomainError
       assert metadata.context == %{a: 1}
+      assert metadata.code == nil
       assert metadata.severity == :error
       assert metadata.retryable == false
+    end
+
+    test "includes the error's code in the metadata" do
+      Errata.report(TestCodedError.new(reason: :boom))
+      assert_received {:telemetry_event, _event, _measurements, metadata}
+      assert metadata.code == "PAYMENT_DECLINED"
     end
 
     test "includes the error's severity and retryable classification in the metadata" do
@@ -559,7 +584,14 @@ defmodule ErrataTest do
       assert event.meta.context == %{a: 1}
       assert event.meta.severity == :error
       assert event.meta.retryable == false
+      assert event.meta.code == nil
       assert %{module: ErrataTest, file: _, line: _} = event.meta.env
+    end
+
+    test "includes the error's code in the Logger metadata" do
+      capture_log(fn -> Errata.log(TestCodedError.new(reason: :boom)) end)
+      assert_received {:log_event, event}
+      assert event.meta.code == "PAYMENT_DECLINED"
     end
 
     test "defaults to the error's severity, which is :error unless set" do

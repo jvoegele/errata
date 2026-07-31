@@ -23,6 +23,17 @@ defmodule DynamicStatusError do
   def http_status(_error), do: 422
 end
 
+defmodule CodedError do
+  use Errata.DomainError, code: "ORDER_NOT_FOUND"
+end
+
+defmodule DynamicCodeError do
+  use Errata.DomainError, reasons: [:expired, :revoked]
+  def code(%{reason: :expired}), do: "TOKEN_EXPIRED"
+  def code(%{reason: :revoked}), do: "TOKEN_REVOKED"
+  def code(_error), do: "TOKEN_INVALID"
+end
+
 defmodule SeverityOverrideError do
   use Errata.DomainError, severity: :warning
 end
@@ -227,6 +238,25 @@ defmodule Errata.ErrorTest do
       assert map.env.file_line =~ ~r<error_test\.exs:\d+$>
       assert map.env.function =~ ~r<test to_map/1>
     end
+
+    test "includes the code key, which is nil when the type declares none" do
+      map = TestError.to_map(TestError.new())
+
+      assert Map.has_key?(map, :code)
+      assert map.code == nil
+    end
+
+    test "includes the declared code" do
+      assert CodedError.to_map(CodedError.new()).code == "ORDER_NOT_FOUND"
+
+      assert DynamicCodeError.to_map(DynamicCodeError.new(reason: :expired)).code ==
+               "TOKEN_EXPIRED"
+    end
+
+    test "includes the code of a wrapped Errata error cause" do
+      map = TestError.to_map(TestError.new(cause: CodedError.new()))
+      assert map.cause.code == "ORDER_NOT_FOUND"
+    end
   end
 
   describe "raising as an exception" do
@@ -348,6 +378,41 @@ defmodule Errata.ErrorTest do
         Code.compile_string("""
         defmodule Errata.ErrorTest.BadStatus do
           use Errata.DomainError, http_status: 999_999
+        end
+        """)
+      end
+    end
+  end
+
+  describe "code/1" do
+    test "is nil when the error type does not declare one" do
+      assert TestError.code(TestError.new()) == nil
+      assert ReasonedError.code(ReasonedError.new()) == nil
+    end
+
+    test "returns the declared :code" do
+      assert CodedError.code(CodedError.new()) == "ORDER_NOT_FOUND"
+    end
+
+    test "can be overridden to derive a code from the error" do
+      assert DynamicCodeError.code(DynamicCodeError.new(reason: :expired)) == "TOKEN_EXPIRED"
+      assert DynamicCodeError.code(DynamicCodeError.new(reason: :revoked)) == "TOKEN_REVOKED"
+      assert DynamicCodeError.code(DynamicCodeError.new()) == "TOKEN_INVALID"
+    end
+
+    test "rejects a :code that is not a non-empty string at compile time" do
+      assert_raise ArgumentError, ~r/must be a non-empty string/, fn ->
+        Code.compile_string("""
+        defmodule Errata.ErrorTest.BadCodeAtom do
+          use Errata.DomainError, code: :ORDER_NOT_FOUND
+        end
+        """)
+      end
+
+      assert_raise ArgumentError, ~r/must be a non-empty string/, fn ->
+        Code.compile_string("""
+        defmodule Errata.ErrorTest.BadCodeEmpty do
+          use Errata.DomainError, code: ""
         end
         """)
       end
