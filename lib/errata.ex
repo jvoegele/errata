@@ -29,7 +29,7 @@ defmodule Errata do
           reason: atom() | nil,
           context: map() | nil,
           cause: Errata.Cause.t() | nil,
-          env: Errata.Env.t()
+          env: Errata.Env.t() | nil
         }
 
   @typedoc """
@@ -470,8 +470,77 @@ defmodule Errata do
   end
 
   @doc """
-  Logs `error` at the given `level` (default `:error`) with its structured fields
-  attached as Logger metadata.
+  Returns the severity of `error`, as a `t:Logger.level/0`.
+
+  This delegates to the error module's generated `severity/1` function, which is
+  `:error` for every error type unless it says otherwise. Set a severity per type
+  with the `:severity` option to `use Errata.Error` (and friends), or override
+  `severity/1` to compute one from the error's `:reason` or `:context`.
+
+  Severity is the level at which `log/2` logs an error when no level is given
+  explicitly, and is included in the metadata of both `log/2` and `report/2`, so
+  a telemetry handler can route or alert on it:
+
+      defmodule MyApp.Orders.RateLimited do
+        use Errata.DomainError, severity: :warning
+      end
+
+  Unless a type opts in, the severity is `:error`:
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> Errata.severity(OrderNotFound.new())
+      :error
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec severity(error()) :: Logger.level()
+  def severity(error) when is_error(error) do
+    error.__struct__.severity(error)
+  end
+
+  def severity(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Returns `true` if `error` is considered retryable.
+
+  This delegates to the error module's generated `retryable?/1` function, whose
+  default is derived from the error's kind: `:infrastructure` errors are
+  retryable (timeouts and connection blips are usually transient), while
+  `:domain` and `:general` errors are not. Set it per type with the `:retryable`
+  option to `use Errata.Error` (and friends), or override `retryable?/1` to
+  decide from the error's `:reason` or `:context`.
+
+  Errata deliberately provides no retry mechanism of its own — this is a
+  classification that _your_ retry logic (or a library such as `:retry`) can
+  branch on without knowing the error's specific type:
+
+      case do_work() do
+        {:error, error} when Errata.is_error(error) ->
+          if Errata.retryable?(error), do: retry(), else: {:error, error}
+
+        result ->
+          result
+      end
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec retryable?(error()) :: boolean()
+  def retryable?(error) when is_error(error) do
+    error.__struct__.retryable?(error)
+  end
+
+  def retryable?(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Logs `error` at the given `level` with its structured fields attached as Logger
+  metadata.
+
+  When no `level` is given, the error's own `severity/1` is used (which is
+  `:error` unless the error type sets a `:severity`).
 
   The log _message_ is the developer-oriented `Exception.message/1` (combining
   `:message` and `:reason`). The error's `:reason`, `:kind`, `:context`, and
@@ -482,16 +551,18 @@ defmodule Errata do
     * `:error_type` — the error's module
     * `:kind` — the error's kind (`:domain` / `:infrastructure` / `:general`)
     * `:reason` — the error's reason
+    * `:severity` — the error's severity (see `severity/1`)
+    * `:retryable` — whether the error is retryable (see `retryable?/1`)
     * `:context` — the error's context map
     * `:env` — a map of the origin `module`, `function`, `file`, and `line`
 
   Returns `:ok`. Raises an `ArgumentError` if `error` is not an Errata error.
   """
-  @spec log(error(), Logger.level()) :: :ok
-  def log(error, level \\ :error)
+  @spec log(error(), Logger.level() | nil) :: :ok
+  def log(error, level \\ nil)
 
   def log(error, level) when is_error(error) do
-    Logger.log(level, fn -> Exception.message(error) end, log_metadata(error))
+    Logger.log(level || severity(error), fn -> Exception.message(error) end, log_metadata(error))
   end
 
   def log(other, _level) do
@@ -512,8 +583,8 @@ defmodule Errata do
     * measurements `%{system_time: integer(), count: 1}` — `:count` is always `1`,
       so `Telemetry.Metrics.counter/2` works out of the box
     * metadata containing the full `:error` struct plus `:kind`, `:reason`,
-      `:error_type`, and `:context` as top-level keys (simple values suitable for
-      use as metric tags)
+      `:error_type`, `:severity`, `:retryable`, and `:context` as top-level keys
+      (simple values suitable for use as metric tags)
 
   Options:
 
@@ -523,8 +594,8 @@ defmodule Errata do
     * `:measurements` — extra measurements merged into the event, with the
       standard measurements likewise protected.
     * `:log` — also log the error via `log/2`. `false` (the default) emits
-      telemetry only; `true` logs at `:error`; an atom level (e.g. `:warning`)
-      logs at that level.
+      telemetry only; `true` logs at the error's own `severity/1`; an atom level
+      (e.g. `:warning`) logs at that level.
 
   Returns `:ok`. Raises an `ArgumentError` if `error` is not an Errata error.
 
@@ -565,6 +636,8 @@ defmodule Errata do
       kind: error.kind,
       reason: error.reason,
       error_type: error.__struct__,
+      severity: severity(error),
+      retryable: retryable?(error),
       context: error.context || %{}
     }
   end
@@ -574,6 +647,8 @@ defmodule Errata do
       error_type: error.__struct__,
       kind: error.kind,
       reason: error.reason,
+      severity: severity(error),
+      retryable: retryable?(error),
       context: error.context || %{},
       env: env_metadata(error.env)
     ]
@@ -586,6 +661,6 @@ defmodule Errata do
   defp env_metadata(_), do: %{}
 
   defp maybe_log(_error, level) when level in [false, nil], do: :ok
-  defp maybe_log(error, true), do: log(error, :error)
+  defp maybe_log(error, true), do: log(error, severity(error))
   defp maybe_log(error, level) when is_atom(level), do: log(error, level)
 end

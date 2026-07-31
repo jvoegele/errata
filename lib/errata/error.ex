@@ -59,6 +59,17 @@ defmodule Errata.Error do
       defaults off the error's kind (`:domain` → `422`, `:infrastructure` → `503`, `:general` →
       `500`). The generated `http_status/1` is overridable, so it can instead be defined to compute
       a status from the error's `:reason` or `:context`.
+    * `:severity` - the severity of this error type, as a `t:Logger.level/0`, returned by the
+      generated `severity/1` function (and `Errata.severity/1`). Defaults to `:error` for every
+      kind. This is the level at which `Errata.log/2` logs the error when no level is given
+      explicitly, and it is included in the metadata emitted by `Errata.log/2` and
+      `Errata.report/2`. The generated `severity/1` is overridable, so it can instead be defined
+      to compute a severity from the error's `:reason` or `:context`.
+    * `:retryable` - whether errors of this type are retryable, returned by the generated
+      `retryable?/1` function (and `Errata.retryable?/1`). When omitted, this defaults off the
+      error's kind: `:infrastructure` errors are retryable, `:domain` and `:general` errors are
+      not. The generated `retryable?/1` is overridable, so it can instead be defined to decide
+      from the error's `:reason` or `:context`.
     * `:kind` - the "kind" of Errata error to create, one of `:domain`, `:infrastructure`, or
       `:general` (which is the default)
 

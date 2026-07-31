@@ -155,6 +155,8 @@ defmodule Errata.Errors do
     type_def = define_type(kind)
     reasons_def = define_reasons(reasons)
     http_status_def = define_http_status(kind, module_name, opts)
+    severity_def = define_severity(module_name, opts)
+    retryable_def = define_retryable(kind, module_name, opts)
     exception_def = define_exception(kind, opts)
     errata_error_impl = define_errata_error_callbacks()
     string_chars_impl = define_string_chars_impl(module_name)
@@ -165,6 +167,8 @@ defmodule Errata.Errors do
       unquote(type_def)
       unquote(reasons_def)
       unquote(http_status_def)
+      unquote(severity_def)
+      unquote(retryable_def)
       unquote(exception_def)
       unquote(errata_error_impl)
       unquote(string_chars_impl)
@@ -216,6 +220,95 @@ defmodule Errata.Errors do
   defp default_http_status(:domain), do: 422
   defp default_http_status(:infrastructure), do: 503
   defp default_http_status(:general), do: 500
+
+  # Generate the overridable `severity/1` function. Unlike `http_status/1`, the
+  # default does not vary by kind: every error type is `:error` unless it says
+  # otherwise, so that adding severity does not silently change the level at
+  # which existing errors are logged.
+  defp define_severity(module_name, opts) do
+    severity = severity_value!(module_name, opts)
+
+    doc = """
+    Returns the severity of this error (`#{inspect(severity)}` by default).
+
+    The severity is a `t:Logger.level/0` and is the level at which `Errata.log/2`
+    logs the error when no level is given explicitly. Set it with the `:severity`
+    option, or override this function to compute a severity from the error's
+    `:reason` or `:context`. See also `Errata.severity/1`.
+    """
+
+    quote do
+      @doc unquote(doc)
+      @spec severity(Errata.error()) :: Logger.level()
+      def severity(error)
+      def severity(_error), do: unquote(severity)
+
+      defoverridable severity: 1
+    end
+  end
+
+  defp severity_value!(module_name, opts) do
+    case Keyword.get(opts, :severity) do
+      nil ->
+        :error
+
+      severity when is_atom(severity) ->
+        if severity in Logger.levels() do
+          severity
+        else
+          raise ArgumentError,
+                ":severity for #{inspect(module_name)} must be a valid Logger level " <>
+                  "(see `Logger.levels/0`), got: #{inspect(severity)}"
+        end
+
+      other ->
+        raise ArgumentError,
+              ":severity for #{inspect(module_name)} must be a valid Logger level " <>
+                "(see `Logger.levels/0`), got: #{inspect(other)}"
+    end
+  end
+
+  # Generate the overridable `retryable?/1` function. The default is derived from
+  # the error's kind: infrastructure failures (timeouts, connection blips) are
+  # usually transient, while domain errors are not.
+  defp define_retryable(kind, module_name, opts) do
+    retryable = retryable_value!(kind, module_name, opts)
+
+    doc = """
+    Returns whether this error is considered retryable (`#{inspect(retryable)}` by default).
+
+    The default is derived from the error's kind — `:infrastructure` errors are
+    retryable, `:domain` and `:general` errors are not — or set via the
+    `:retryable` option. Override this function to decide from the error's
+    `:reason` or `:context`. See also `Errata.retryable?/1`.
+    """
+
+    quote do
+      @doc unquote(doc)
+      @spec retryable?(Errata.error()) :: boolean()
+      def retryable?(error)
+      def retryable?(_error), do: unquote(retryable)
+
+      defoverridable retryable?: 1
+    end
+  end
+
+  defp retryable_value!(kind, module_name, opts) do
+    case Keyword.get(opts, :retryable) do
+      nil ->
+        default_retryable(kind)
+
+      retryable when is_boolean(retryable) ->
+        retryable
+
+      other ->
+        raise ArgumentError,
+              ":retryable for #{inspect(module_name)} must be a boolean, got: #{inspect(other)}"
+    end
+  end
+
+  defp default_retryable(:infrastructure), do: true
+  defp default_retryable(_kind), do: false
 
   # Validate the `:reasons` option at the `use` site (compile time). When given,
   # it must be a non-empty list of atoms, and any `:default_reason` must be one

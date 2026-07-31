@@ -41,6 +41,10 @@ defmodule ErrataTest do
     use Errata.InfrastructureError
   end
 
+  defmodule TestWarningError do
+    use Errata.DomainError, severity: :warning
+  end
+
   defmodule NonErrataError do
     defexception [:message, :reason, :context, :env]
   end
@@ -406,6 +410,34 @@ defmodule ErrataTest do
     end
   end
 
+  describe "severity/1" do
+    test "delegates to the per-module severity, defaulting to :error" do
+      assert Errata.severity(TestDomainError.new()) == :error
+      assert Errata.severity(TestInfrastructureError.new()) == :error
+      assert Errata.severity(TestGeneralError.new()) == :error
+    end
+
+    test "reflects the :severity option" do
+      assert Errata.severity(TestWarningError.new()) == :warning
+    end
+
+    test "raises ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.severity(nil) end
+    end
+  end
+
+  describe "retryable?/1" do
+    test "delegates to the per-module classification, defaulting off kind" do
+      assert Errata.retryable?(TestInfrastructureError.new())
+      refute Errata.retryable?(TestDomainError.new())
+      refute Errata.retryable?(TestGeneralError.new())
+    end
+
+    test "raises ArgumentError for non-Errata values" do
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.retryable?(nil) end
+    end
+  end
+
   describe "report/2" do
     setup do
       ref = make_ref()
@@ -434,6 +466,19 @@ defmodule ErrataTest do
       assert metadata.reason == :boom
       assert metadata.error_type == TestDomainError
       assert metadata.context == %{a: 1}
+      assert metadata.severity == :error
+      assert metadata.retryable == false
+    end
+
+    test "includes the error's severity and retryable classification in the metadata" do
+      Errata.report(TestWarningError.new(reason: :boom))
+      assert_received {:telemetry_event, _event, _measurements, metadata}
+      assert metadata.severity == :warning
+      assert metadata.retryable == false
+
+      Errata.report(TestInfrastructureError.new(reason: :timeout))
+      assert_received {:telemetry_event, _event, _measurements, metadata}
+      assert metadata.retryable == true
     end
 
     test "merges caller metadata under the protected standard keys" do
@@ -472,6 +517,13 @@ defmodule ErrataTest do
       assert log =~ "[warning]"
     end
 
+    test "log: true logs at the error's severity" do
+      error = TestWarningError.new(message: "boom happened", reason: :boom)
+      log = capture_log(fn -> Errata.report(error, log: true) end)
+      assert log =~ "boom happened"
+      assert log =~ "[warning]"
+    end
+
     test "raises ArgumentError for non-Errata values" do
       assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.report(:nope) end
     end
@@ -505,11 +557,21 @@ defmodule ErrataTest do
       assert event.meta.kind == :domain
       assert event.meta.reason == :boom
       assert event.meta.context == %{a: 1}
+      assert event.meta.severity == :error
+      assert event.meta.retryable == false
       assert %{module: ErrataTest, file: _, line: _} = event.meta.env
     end
 
-    test "defaults to the :error level" do
+    test "defaults to the error's severity, which is :error unless set" do
       capture_log(fn -> assert Errata.log(TestDomainError.new(reason: :boom)) == :ok end)
+      assert_received {:log_event, %{level: :error}}
+
+      capture_log(fn -> assert Errata.log(TestWarningError.new(reason: :boom)) == :ok end)
+      assert_received {:log_event, %{level: :warning}}
+    end
+
+    test "an explicit level overrides the error's severity" do
+      capture_log(fn -> assert Errata.log(TestWarningError.new(reason: :boom), :error) == :ok end)
       assert_received {:log_event, %{level: :error}}
     end
 

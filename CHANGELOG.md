@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Severity and retryability classification on error types. (#24)
+  - `Errata.severity/1` returns an error's severity as a `Logger` level, set per
+    type with the `:severity` option. It defaults to `:error` for every kind, so
+    nothing is reclassified unless a type opts in.
+  - `Errata.retryable?/1` returns whether an error is likely transient, set per
+    type with the `:retryable` option and defaulting off the error's kind:
+    `:infrastructure` errors are retryable, `:domain` and `:general` errors are
+    not. Errata provides no retry mechanism of its own — this is a classification
+    for your own retry logic to branch on.
+  - Both are generated as overridable per-module functions (`severity/1` and
+    `retryable?/1`), following the same pattern as `http_status/1`, so a type can
+    compute either from the error's `:reason` or `:context`. Neither adds a field
+    to the error struct or to the `to_map/1` / JSON shape.
+
+### Changed
+- `Errata.log/2` now logs at the error's `severity/1` when no level is given, and
+  `Errata.report/2` with `log: true` does the same. Since severity is `:error`
+  unless a type sets one, this is backward compatible for existing error types.
+- `:severity` and `:retryable` are now included in the metadata emitted by
+  `Errata.log/2` (as Logger metadata) and `Errata.report/2` (as top-level
+  `[:errata, :error]` telemetry metadata), so handlers can route or alert on them.
+
+### Fixed
+- The `t:Errata.error/0` type declared `env: Errata.Env.t()`, but an error created
+  with `new/1` has no environment. It is now `Errata.Env.t() | nil`, matching
+  `t:Errata.domain_error/0` and `t:Errata.infrastructure_error/0` and the actual
+  behavior.
+
 ## [1.3.0] - 2026-06-04
 
 ### Added

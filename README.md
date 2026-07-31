@@ -157,6 +157,9 @@ Each `use` accepts a few options:
   * `:default_reason` — the `:reason` to use when none is given
   * `:reasons` — an optional list of atoms enumerating the valid reasons for the
     type (see [Choosing between an error type and a reason](#choosing-between-an-error-type-and-a-reason))
+  * `:http_status`, `:severity`, `:retryable` — classifications consumed at
+    boundaries (see [Mapping errors to HTTP status codes](#mapping-errors-to-http-status-codes)
+    and [Classifying errors: severity and retryability](#classifying-errors-severity-and-retryability))
 
 Whichever module you use, the resulting error type is an exception struct that
 conforms to the `t:Errata.error/0` type, implements the `Errata.Error`
@@ -500,6 +503,57 @@ end
 This keeps Errata free of any web-framework dependency: it hands you the status
 code, and the framework glue stays in your application.
 
+### Classifying errors: severity and retryability
+
+Two further classifications are available on every error type, both following the
+same pattern as `http_status/1` — a `use` option, an overridable per-module
+function, and a top-level accessor that works on any Errata error.
+
+**Severity** (`Errata.severity/1`) is a `Logger` level describing how much the
+error matters. It defaults to `:error` for every type, so nothing is reclassified
+behind your back; set `:severity` on the types that deserve a quieter (or
+louder) treatment:
+
+```elixir
+defmodule MyApp.Orders.RateLimited do
+  use Errata.DomainError, severity: :warning
+end
+```
+
+Severity is the level `Errata.log/2` uses when you don't pass one explicitly, and
+it is included in the metadata of both `Errata.log/2` and `Errata.report/2`, so a
+telemetry handler can route or alert on it.
+
+**Retryability** (`Errata.retryable?/1`) records whether the failure is likely to
+be transient. Its default is derived from the error's kind — `:infrastructure`
+errors are retryable (timeouts and connection blips usually are), `:domain` and
+`:general` errors are not — and it can be set per type or computed per error:
+
+```elixir
+defmodule MyApp.Orders.PaymentGatewayError do
+  use Errata.InfrastructureError
+
+  # a rejected request will be rejected again; a timeout may not be
+  def retryable?(%{reason: :invalid_request}), do: false
+  def retryable?(_error), do: true
+end
+```
+
+Errata deliberately ships no retry mechanism of its own. `retryable?/1` is a
+classification your own retry logic (or a library such as
+[`retry`](https://hexdocs.pm/retry)) can branch on without knowing the error's
+specific type:
+
+```elixir
+case do_work() do
+  {:error, error} when Errata.is_error(error) ->
+    if Errata.retryable?(error), do: retry(), else: {:error, error}
+
+  result ->
+    result
+end
+```
+
 ### Rendering an error for users
 
 `Exception.message/1` (and the `String.Chars` implementation) return a
@@ -516,13 +570,14 @@ it into your observability stack at a boundary. Errata provides two thin,
 composable functions for this, and — deliberately — no integration with any
 particular external service.
 
-`Errata.log/2` logs an error's developer message at the given level (`:error` by
-default), attaching its `reason`, `kind`, `context`, and origin `env` as **Logger
-metadata** rather than flattening them into the message string, so they stay
-queryable in structured logging backends:
+`Errata.log/2` logs an error's developer message, attaching its `reason`, `kind`,
+`severity`, `retryable`, `context`, and origin `env` as **Logger metadata** rather
+than flattening them into the message string, so they stay queryable in structured
+logging backends. With no level given it logs at the error's own severity, which
+is `:error` unless the type sets one:
 
 ```elixir
-Errata.log(error)            # logs at :error
+Errata.log(error)            # logs at the error's severity
 Errata.log(error, :warning)  # at a chosen level
 ```
 
@@ -540,8 +595,9 @@ Errata.report(error, metadata: %{request_id: request_id}, log: :warning)
 The event is `[:errata, :error]`, with measurements `%{system_time: _, count: 1}`
 (so [`Telemetry.Metrics`](https://hexdocs.pm/telemetry_metrics) counters work out
 of the box) and metadata carrying the full `:error` struct plus `:kind`,
-`:reason`, `:error_type`, and `:context` as top-level keys — simple values that
-work directly as metric tags. A handler in your application wires it up:
+`:reason`, `:error_type`, `:severity`, `:retryable`, and `:context` as top-level
+keys — simple values that work directly as metric tags. A handler in your
+application wires it up:
 
 ```elixir
 :telemetry.attach("myapp-errata", [:errata, :error], &MyApp.ErrorReporter.handle/4, nil)
