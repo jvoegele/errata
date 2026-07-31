@@ -9,6 +9,21 @@ defmodule Errata.Errors do
   # fields (`:kind`, `:env`, `:__errata_error__`) are managed by Errata itself.
   @allowed_param_keys [:message, :reason, :context, :cause]
 
+  # Valid values for the `:severity` option, most to least severe. This is the
+  # set of `t:Logger.level/0` values, listed here rather than read from
+  # `Logger.levels/0`, which does not exist on all supported Elixir versions.
+  # The deprecated `:warn` alias is intentionally excluded.
+  @severity_levels [
+    :emergency,
+    :alert,
+    :critical,
+    :error,
+    :warning,
+    :notice,
+    :info,
+    :debug
+  ]
+
   @doc false
   @spec create(module() | struct(), Errata.Error.params()) :: Errata.Error.t()
   def create(error_type, params) do
@@ -252,19 +267,13 @@ defmodule Errata.Errors do
       nil ->
         :error
 
-      severity when is_atom(severity) ->
-        if severity in Logger.levels() do
-          severity
-        else
-          raise ArgumentError,
-                ":severity for #{inspect(module_name)} must be a valid Logger level " <>
-                  "(see `Logger.levels/0`), got: #{inspect(severity)}"
-        end
+      severity when severity in @severity_levels ->
+        severity
 
       other ->
         raise ArgumentError,
-              ":severity for #{inspect(module_name)} must be a valid Logger level " <>
-                "(see `Logger.levels/0`), got: #{inspect(other)}"
+              ":severity for #{inspect(module_name)} must be one of the Logger levels " <>
+                "#{inspect(@severity_levels)}, got: #{inspect(other)}"
     end
   end
 

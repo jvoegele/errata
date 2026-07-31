@@ -370,7 +370,7 @@ defmodule Errata.ErrorTest do
     end
 
     test "rejects a :severity that is not a Logger level at compile time" do
-      assert_raise ArgumentError, ~r/must be a valid Logger level/, fn ->
+      assert_raise ArgumentError, ~r/must be one of the Logger levels/, fn ->
         Code.compile_string("""
         defmodule Errata.ErrorTest.BadSeverity do
           use Errata.DomainError, severity: :catastrophe
@@ -378,7 +378,7 @@ defmodule Errata.ErrorTest do
         """)
       end
 
-      assert_raise ArgumentError, ~r/must be a valid Logger level/, fn ->
+      assert_raise ArgumentError, ~r/must be one of the Logger levels/, fn ->
         Code.compile_string("""
         defmodule Errata.ErrorTest.BadSeverityType do
           use Errata.DomainError, severity: "warning"
