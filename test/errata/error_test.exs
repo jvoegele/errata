@@ -23,6 +23,30 @@ defmodule DynamicStatusError do
   def http_status(_error), do: 422
 end
 
+defmodule SeverityOverrideError do
+  use Errata.DomainError, severity: :warning
+end
+
+defmodule DynamicSeverityError do
+  use Errata.DomainError, reasons: [:minor, :major]
+  def severity(%{reason: :minor}), do: :info
+  def severity(_error), do: :error
+end
+
+defmodule PlainInfrastructureError do
+  use Errata.InfrastructureError
+end
+
+defmodule NotRetryableInfrastructureError do
+  use Errata.InfrastructureError, retryable: false
+end
+
+defmodule DynamicRetryableError do
+  use Errata.InfrastructureError, reasons: [:not_found, :timeout]
+  def retryable?(%{reason: :not_found}), do: false
+  def retryable?(_error), do: true
+end
+
 defmodule Errata.ErrorTest do
   @moduledoc "Tests for the Errata.Error module"
 
@@ -324,6 +348,69 @@ defmodule Errata.ErrorTest do
         Code.compile_string("""
         defmodule Errata.ErrorTest.BadStatus do
           use Errata.DomainError, http_status: 999_999
+        end
+        """)
+      end
+    end
+  end
+
+  describe "severity/1" do
+    test "defaults to :error for every kind" do
+      assert TestError.severity(TestError.new()) == :error
+      assert ReasonedError.severity(ReasonedError.new()) == :error
+    end
+
+    test "the :severity option overrides the default" do
+      assert SeverityOverrideError.severity(SeverityOverrideError.new()) == :warning
+    end
+
+    test "can be overridden to compute a severity from the error" do
+      assert DynamicSeverityError.severity(DynamicSeverityError.new(reason: :minor)) == :info
+      assert DynamicSeverityError.severity(DynamicSeverityError.new(reason: :major)) == :error
+    end
+
+    test "rejects a :severity that is not a Logger level at compile time" do
+      assert_raise ArgumentError, ~r/must be one of the Logger levels/, fn ->
+        Code.compile_string("""
+        defmodule Errata.ErrorTest.BadSeverity do
+          use Errata.DomainError, severity: :catastrophe
+        end
+        """)
+      end
+
+      assert_raise ArgumentError, ~r/must be one of the Logger levels/, fn ->
+        Code.compile_string("""
+        defmodule Errata.ErrorTest.BadSeverityType do
+          use Errata.DomainError, severity: "warning"
+        end
+        """)
+      end
+    end
+  end
+
+  describe "retryable?/1" do
+    test "defaults off the error kind" do
+      # TestError is a :general error, ReasonedError a :domain error
+      refute TestError.retryable?(TestError.new())
+      refute ReasonedError.retryable?(ReasonedError.new())
+      assert PlainInfrastructureError.retryable?(PlainInfrastructureError.new())
+    end
+
+    test "the :retryable option overrides the kind default" do
+      assert NotRetryableInfrastructureError.retryable?(NotRetryableInfrastructureError.new()) ==
+               false
+    end
+
+    test "can be overridden to decide from the error" do
+      refute DynamicRetryableError.retryable?(DynamicRetryableError.new(reason: :not_found))
+      assert DynamicRetryableError.retryable?(DynamicRetryableError.new(reason: :timeout))
+    end
+
+    test "rejects a non-boolean :retryable at compile time" do
+      assert_raise ArgumentError, ~r/:retryable .* must be a boolean/, fn ->
+        Code.compile_string("""
+        defmodule Errata.ErrorTest.BadRetryable do
+          use Errata.DomainError, retryable: :sometimes
         end
         """)
       end
