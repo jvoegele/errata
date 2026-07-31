@@ -59,6 +59,12 @@ defmodule Errata.Error do
       defaults off the error's kind (`:domain` → `422`, `:infrastructure` → `503`, `:general` →
       `500`). The generated `http_status/1` is overridable, so it can instead be defined to compute
       a status from the error's `:reason` or `:context`.
+    * `:code` - a stable external code for this error type (such as `"ORDER_NOT_FOUND"`),
+      returned by the generated `code/1` function (and `Errata.code/1`) and included in
+      `c:to_map/1`. A code is independent of the module name, so it remains a valid contract with
+      external consumers even if the module is renamed or moved. There is no default: types that
+      do not declare one return `nil`. The generated `code/1` is overridable, so it can instead be
+      defined to derive a code from the error's `:reason` or `:context`.
     * `:severity` - the severity of this error type, as a `t:Logger.level/0`, returned by the
       generated `severity/1` function (and `Errata.severity/1`). Defaults to `:error` for every
       kind. This is the level at which `Errata.log/2` logs the error when no level is given

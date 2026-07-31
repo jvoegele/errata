@@ -470,6 +470,39 @@ defmodule Errata do
   end
 
   @doc """
+  Returns the stable external code for `error`, or `nil` if it has none.
+
+  An error's type identity is its Elixir module, which is an implementation
+  detail: renaming or moving the module changes the only identifier that
+  `to_map/1` exposes (`error_type`). That makes it a poor contract for external
+  consumers — API clients, i18n catalogs, support tooling — who need an
+  identifier that survives refactoring.
+
+  A code is that identifier. It is opt-in, and independent of the module name:
+
+      defmodule MyApp.Orders.OrderNotFound do
+        use Errata.DomainError, code: "ORDER_NOT_FOUND"
+      end
+
+  The code appears in `to_map/1` (and therefore in the JSON encoding) under the
+  `code` key, and in the metadata emitted by `log/2` and `report/2`. Types that
+  do not declare one return `nil`, so a boundary that requires a code should
+  supply its own fallback:
+
+      Errata.code(error) || "UNKNOWN"
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec code(error()) :: String.t() | nil
+  def code(error) when is_error(error) do
+    error.__struct__.code(error)
+  end
+
+  def code(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
   Returns the severity of `error`, as a `t:Logger.level/0`.
 
   This delegates to the error module's generated `severity/1` function, which is
@@ -551,6 +584,7 @@ defmodule Errata do
     * `:error_type` — the error's module
     * `:kind` — the error's kind (`:domain` / `:infrastructure` / `:general`)
     * `:reason` — the error's reason
+    * `:code` — the error's stable external code, or `nil` (see `code/1`)
     * `:severity` — the error's severity (see `severity/1`)
     * `:retryable` — whether the error is retryable (see `retryable?/1`)
     * `:context` — the error's context map
@@ -583,8 +617,8 @@ defmodule Errata do
     * measurements `%{system_time: integer(), count: 1}` — `:count` is always `1`,
       so `Telemetry.Metrics.counter/2` works out of the box
     * metadata containing the full `:error` struct plus `:kind`, `:reason`,
-      `:error_type`, `:severity`, `:retryable`, and `:context` as top-level keys
-      (simple values suitable for use as metric tags)
+      `:error_type`, `:code`, `:severity`, `:retryable`, and `:context` as
+      top-level keys (simple values suitable for use as metric tags)
 
   Options:
 
@@ -636,6 +670,7 @@ defmodule Errata do
       kind: error.kind,
       reason: error.reason,
       error_type: error.__struct__,
+      code: code(error),
       severity: severity(error),
       retryable: retryable?(error),
       context: error.context || %{}
@@ -647,6 +682,7 @@ defmodule Errata do
       error_type: error.__struct__,
       kind: error.kind,
       reason: error.reason,
+      code: code(error),
       severity: severity(error),
       retryable: retryable?(error),
       context: error.context || %{},

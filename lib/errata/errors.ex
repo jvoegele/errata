@@ -111,6 +111,7 @@ defmodule Errata.Errors do
       # `inspect/1` renders the module as "MyApp.Foo" instead of the raw atom
       # form "Elixir.MyApp.Foo" that would otherwise leak into JSON output.
       error_type: inspect(error_type),
+      code: error_type.code(error),
       reason: error.reason,
       message: error.message,
       cause: cause_map(error.cause),
@@ -170,6 +171,7 @@ defmodule Errata.Errors do
     type_def = define_type(kind)
     reasons_def = define_reasons(reasons)
     http_status_def = define_http_status(kind, module_name, opts)
+    code_def = define_code(module_name, opts)
     severity_def = define_severity(module_name, opts)
     retryable_def = define_retryable(kind, module_name, opts)
     exception_def = define_exception(kind, opts)
@@ -182,6 +184,7 @@ defmodule Errata.Errors do
       unquote(type_def)
       unquote(reasons_def)
       unquote(http_status_def)
+      unquote(code_def)
       unquote(severity_def)
       unquote(retryable_def)
       unquote(exception_def)
@@ -235,6 +238,58 @@ defmodule Errata.Errors do
   defp default_http_status(:domain), do: 422
   defp default_http_status(:infrastructure), do: 503
   defp default_http_status(:general), do: 500
+
+  # Generate the overridable `code/1` function. Unlike the other classifications,
+  # there is no sensible default: a code is a contract with external consumers,
+  # so it exists only where one was deliberately declared. Deriving it from the
+  # module name would reintroduce exactly the coupling the option exists to break.
+  defp define_code(module_name, opts) do
+    code = code_value!(module_name, opts)
+
+    doc =
+      case code do
+        nil ->
+          """
+          Returns the stable external code for this error, or `nil` if it has none.
+
+          No code is set for this error type. Set one with the `:code` option, or
+          override this function to derive a code from the error's `:reason` or
+          `:context`. See also `Errata.code/1`.
+          """
+
+        code ->
+          """
+          Returns the stable external code for this error (`#{inspect(code)}`).
+
+          The code is independent of this module's name, so it remains a valid
+          contract with external consumers even if the module is renamed or moved.
+          See also `Errata.code/1`.
+          """
+      end
+
+    quote do
+      @doc unquote(doc)
+      @spec code(Errata.error()) :: String.t() | nil
+      def code(error)
+      def code(_error), do: unquote(code)
+
+      defoverridable code: 1
+    end
+  end
+
+  defp code_value!(module_name, opts) do
+    case Keyword.get(opts, :code) do
+      nil ->
+        nil
+
+      code when is_binary(code) and code != "" ->
+        code
+
+      other ->
+        raise ArgumentError,
+              ":code for #{inspect(module_name)} must be a non-empty string, got: #{inspect(other)}"
+    end
+  end
 
   # Generate the overridable `severity/1` function. Unlike `http_status/1`, the
   # default does not vary by kind: every error type is `:error` unless it says
