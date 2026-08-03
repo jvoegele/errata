@@ -664,16 +664,25 @@ defmodule Errata do
     raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
   end
 
+  # The `:error` struct is carried with its context redacted too, not just the
+  # separate `:context` key. Leaving the raw struct in metadata would make
+  # redaction pointless in the case it exists for: a handler that forwards the
+  # error to Sentry reaches `metadata.error` and ships the unredacted context.
+  # The struct is otherwise untouched — same type, same reason, still
+  # pattern-matchable and re-raisable. The unredacted context remains available
+  # on the error you hold locally.
   defp standard_metadata(error) do
+    context = Errata.Errors.redacted_context(error)
+
     %{
-      error: error,
+      error: %{error | context: context},
       kind: error.kind,
       reason: error.reason,
       error_type: error.__struct__,
       code: code(error),
       severity: severity(error),
       retryable: retryable?(error),
-      context: error.context || %{}
+      context: context
     }
   end
 
@@ -685,7 +694,7 @@ defmodule Errata do
       code: code(error),
       severity: severity(error),
       retryable: retryable?(error),
-      context: error.context || %{},
+      context: Errata.Errors.redacted_context(error),
       env: env_metadata(error.env)
     ]
   end
