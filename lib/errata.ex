@@ -451,6 +451,81 @@ defmodule Errata do
   end
 
   @doc """
+  Returns `error`'s `:reason`, or `nil` if it has none.
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> Errata.reason(OrderNotFound.new(reason: :not_found))
+      :not_found
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> Errata.reason(OrderNotFound.new())
+      nil
+
+  Equivalent to reading `error.reason`, and preferable at a boundary that handles
+  errors generically: a variable bound by a bare `rescue e ->` has no type the
+  compiler can narrow, so `e.reason` there draws an "unknown key" warning — for
+  any exception, not just an Errata one. Going through the accessor is a plain
+  function call and warns for nothing.
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec reason(error()) :: atom() | nil
+  def reason(error) when is_error(error), do: error.reason
+
+  def reason(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Returns `error`'s `:context`, or `%{}` if it has none.
+
+  Returns an empty map rather than `nil` for an error created without context, so
+  calling code can treat the result as a map unconditionally.
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> Errata.context(OrderNotFound.new(context: %{order_id: 42}))
+      %{order_id: 42}
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> Errata.context(OrderNotFound.new())
+      %{}
+
+  This is the error's **unredacted** context — the values as captured. Redaction
+  applies to what Errata serializes and emits (see `Errata.Redaction`); an error
+  in your own hands keeps the real values for debugging, and this accessor
+  reflects that.
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec context(error()) :: map()
+  def context(error) when is_error(error), do: error.context || %{}
+
+  def context(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Returns `error`'s kind: `:domain`, `:infrastructure`, or `:general`.
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> Errata.kind(OrderNotFound.new())
+      :domain
+
+  For branching on the kind, the `is_domain_error/1` and
+  `is_infrastructure_error/1` guards are usually the better tool, since they work
+  in a guard clause. This is for the cases that want the value itself — logging
+  it, or tagging a metric.
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec kind(error()) :: error_kind()
+  def kind(error) when is_error(error), do: error.kind
+
+  def kind(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
   Returns the HTTP status code associated with `error`.
 
   This delegates to the error module's generated `http_status/1` function, which
