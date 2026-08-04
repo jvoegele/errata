@@ -703,6 +703,60 @@ to an existing app never silently changes what it logs. Declared and global keys
 compose. When a key list is not enough, override `redact_context/1`; see
 `Errata.Redaction`.
 
+## Aggregate errors
+
+Validation produces the shape a single error struct cannot model: a request fails
+and there are five reasons, all of which the caller needs. Putting them in
+`:context` as a list of maps throws away everything Errata is for — each
+sub-failure loses its type, code, HTTP status, severity, and retryability, and
+becomes inert data.
+
+Declare a type as an aggregate and it holds errors instead:
+
+```elixir
+defmodule MyApp.Orders.ValidationFailed do
+  use Errata.DomainError, aggregate: true, default_message: "validation failed"
+end
+
+ValidationFailed.new(errors: [email_error, age_error])
+```
+
+The aggregate is an ordinary Errata error — `Errata.is_error/1` holds, it raises
+and returns in `{:error, _}` tuples, and it serializes through `to_map/1` and the
+JSON encoders like anything else. Its members serialize with it, each keeping its
+own type, code, and redaction rules:
+
+```elixir
+Errata.to_map(error).errors
+#=> [%{error_type: "MyApp.Orders.EmailInvalid", code: "EMAIL_INVALID", ...},
+#=>  %{error_type: "MyApp.Orders.AgeInvalid",   code: "AGE_INVALID",   ...}]
+```
+
+Reach the members with `Errata.errors/1`, which returns `[]` for an ordinary
+error so calling code never has to branch on whether it has an aggregate.
+
+### How the merge rules work
+
+An aggregate has to answer `severity/1`, `retryable?/1`, and `http_status/1` for
+a collection. The three merge **differently**, because the right answer differs:
+
+| | rule | why |
+|---|---|---|
+| `severity/1` | the most severe member | severities are totally ordered, so the maximum is unambiguous — and if any member is `:error`, the aggregate is at least `:error` |
+| `retryable?/1` | retryable only if **every** member is | retrying helps only if all of it could succeed next time; one permanent failure makes the retry pointless |
+| `http_status/1` | the members' status if they agree, else the aggregate's own | there is no meaningful maximum over status codes, so a "highest" would be arbitrary |
+
+An aggregate with no members falls back to its own declared values. Each rule is
+overridable per type, so a type that wants different behaviour just defines the
+function. See `Errata.Aggregate` for the full reasoning.
+
+### Members must be Errata errors
+
+Anything else raises `ArgumentError` when the aggregate is built. That is
+deliberate: the merge rules are defined in terms of `severity/1`, `retryable?/1`,
+and `http_status/1`, which a bare map or a foreign exception cannot answer. Wrap
+a foreign error in an Errata type first — that is what `Errata.wrap/3` is for.
+
 ## Choosing between an error type and a reason
 
 Errata errors carry both a _type_ (the module) and an optional `:reason` atom,

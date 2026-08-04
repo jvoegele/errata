@@ -28,9 +28,10 @@ defmodule Errata.Errors do
   @spec create(module() | struct(), Errata.Error.params()) :: Errata.Error.t()
   def create(error_type, params) do
     error_type
-    |> struct(validate_params!(params))
+    |> struct(validate_params!(params, error_type))
     |> normalize_cause()
     |> validate_reason!()
+    |> validate_errors!()
   end
 
   @doc false
@@ -39,9 +40,10 @@ defmodule Errata.Errors do
   def create(error_type, params, %Macro.Env{} = env, stacktrace) do
     error =
       error_type
-      |> struct(validate_params!(params))
+      |> struct(validate_params!(params, error_type))
       |> normalize_cause()
       |> validate_reason!()
+      |> validate_errors!()
 
     %{error | env: Errata.Env.new(env, stacktrace)}
   end
@@ -65,11 +67,20 @@ defmodule Errata.Errors do
 
   # Reject unknown/misspelled param keys instead of silently dropping them
   # (which `struct/2` would do). Returns the params unchanged when valid.
-  defp validate_params!(params) do
+  #
+  # `:errors` is allowed only for aggregate types. Accepting it everywhere would
+  # silently drop the members on a type that has no `:errors` field, which is
+  # exactly the typo this check exists to catch.
+  defp validate_params!(params, error_type) do
+    allowed =
+      if aggregate_type?(error_type),
+        do: [:errors | @allowed_param_keys],
+        else: @allowed_param_keys
+
     invalid =
       params
       |> Enum.map(fn {key, _value} -> key end)
-      |> Enum.reject(&(&1 in @allowed_param_keys))
+      |> Enum.reject(&(&1 in allowed))
 
     case invalid do
       [] ->
@@ -78,8 +89,24 @@ defmodule Errata.Errors do
       keys ->
         raise ArgumentError,
               "invalid param key(s) for an Errata error: #{inspect(keys)}. " <>
-                "Allowed keys are #{inspect(@allowed_param_keys)}."
+                "Allowed keys are #{inspect(allowed)}."
     end
+  end
+
+  # An aggregate's members are validated at construction rather than at
+  # serialization, so a bad member is reported where it was introduced.
+  defp validate_errors!(%mod{errors: errors} = error),
+    do: %{error | errors: Errata.Aggregate.validate_members!(errors, mod)}
+
+  defp validate_errors!(error), do: error
+
+  @doc false
+  @spec aggregate_type?(module() | struct()) :: boolean()
+  def aggregate_type?(%mod{}), do: aggregate_type?(mod)
+
+  def aggregate_type?(module) when is_atom(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :__errata_aggregate__, 0) and
+      module.__errata_aggregate__()
   end
 
   # When an error type declares a closed set of `:reasons`, reject any non-nil
@@ -118,7 +145,15 @@ defmodule Errata.Errors do
       env: Errata.Env.to_map(error.env),
       context: context_map(error)
     }
+    |> put_errors_map(error)
   end
+
+  # Members serialize through the same `to_map/1`, so each keeps its own type,
+  # code, and — importantly — its own redaction rules.
+  defp put_errors_map(map, %{errors: errors}) when is_list(errors),
+    do: Map.put(map, :errors, Enum.map(errors, &to_map/1))
+
+  defp put_errors_map(map, _error), do: map
 
   # Render the wrapped cause for serialization. Errata errors recurse into their
   # full structured map; standard exceptions are rendered by type and message;
@@ -139,12 +174,22 @@ defmodule Errata.Errors do
   @doc false
   @spec format_message(Errata.Error.t()) :: String.t()
   def format_message(error)
-  def format_message(%{message: nil, reason: nil}), do: ""
-  def format_message(%{message: nil, reason: reason}) when is_atom(reason), do: inspect(reason)
-  def format_message(%{message: message, reason: nil}) when is_binary(message), do: message
 
-  def format_message(%{message: message, reason: reason})
-      when is_binary(message) and is_atom(reason) do
+  def format_message(%{errors: errors} = error) when is_list(errors) do
+    error
+    |> Map.delete(:errors)
+    |> base_message()
+    |> Errata.Aggregate.format_message(errors)
+  end
+
+  def format_message(error), do: base_message(error)
+
+  defp base_message(%{message: nil, reason: nil}), do: ""
+  defp base_message(%{message: nil, reason: reason}) when is_atom(reason), do: inspect(reason)
+  defp base_message(%{message: message, reason: nil}) when is_binary(message), do: message
+
+  defp base_message(%{message: message, reason: reason})
+       when is_binary(message) and is_atom(reason) do
     "#{message}: #{inspect(reason)}"
   end
 
@@ -166,7 +211,9 @@ defmodule Errata.Errors do
       when kind in [:domain, :infrastructure, :general] and is_atom(module_name) do
     reasons = Keyword.get(opts, :reasons)
     validate_reasons_opt!(module_name, reasons, Keyword.get(opts, :default_reason))
+    validate_aggregate_opt!(module_name, opts)
 
+    aggregate_def = define_aggregate_reflection(opts)
     attribute_defs = define_attributes(module_name)
     type_def = define_type(kind)
     reasons_def = define_reasons(reasons)
@@ -181,6 +228,7 @@ defmodule Errata.Errors do
     json_encoder_impls = define_json_encoder_impls(module_name)
 
     quote do
+      unquote(aggregate_def)
       unquote(attribute_defs)
       unquote(type_def)
       unquote(reasons_def)
@@ -203,6 +251,7 @@ defmodule Errata.Errors do
   # user overrides do not trip Elixir's `@impl` consistency warnings.
   defp define_http_status(kind, module_name, opts) do
     status = http_status_value!(kind, module_name, opts)
+    aggregate? = aggregate?(opts)
 
     doc = """
     Returns the HTTP status code associated with this error (`#{status}` by default).
@@ -216,6 +265,12 @@ defmodule Errata.Errors do
       @doc unquote(doc)
       @spec http_status(Errata.error()) :: non_neg_integer()
       def http_status(error)
+
+      if unquote(aggregate?) do
+        def http_status(%{errors: errors}),
+          do: Errata.Aggregate.http_status(errors, unquote(status))
+      end
+
       def http_status(_error), do: unquote(status)
 
       defoverridable http_status: 1
@@ -299,6 +354,7 @@ defmodule Errata.Errors do
   # which existing errors are logged.
   defp define_severity(module_name, opts) do
     severity = severity_value!(module_name, opts)
+    aggregate? = aggregate?(opts)
 
     doc = """
     Returns the severity of this error (`#{inspect(severity)}` by default).
@@ -313,6 +369,11 @@ defmodule Errata.Errors do
       @doc unquote(doc)
       @spec severity(Errata.error()) :: Logger.level()
       def severity(error)
+
+      if unquote(aggregate?) do
+        def severity(%{errors: errors}), do: Errata.Aggregate.severity(errors, unquote(severity))
+      end
+
       def severity(_error), do: unquote(severity)
 
       defoverridable severity: 1
@@ -403,6 +464,7 @@ defmodule Errata.Errors do
   # usually transient, while domain errors are not.
   defp define_retryable(kind, module_name, opts) do
     retryable = retryable_value!(kind, module_name, opts)
+    aggregate? = aggregate?(opts)
 
     doc = """
     Returns whether this error is considered retryable (`#{inspect(retryable)}` by default).
@@ -417,6 +479,12 @@ defmodule Errata.Errors do
       @doc unquote(doc)
       @spec retryable?(Errata.error()) :: boolean()
       def retryable?(error)
+
+      if unquote(aggregate?) do
+        def retryable?(%{errors: errors}),
+          do: Errata.Aggregate.retryable?(errors, unquote(retryable))
+      end
+
       def retryable?(_error), do: unquote(retryable)
 
       defoverridable retryable?: 1
@@ -526,6 +594,31 @@ defmodule Errata.Errors do
 
   def redacted_context(_error), do: %{}
 
+  # `:aggregate` opts plumbing. Reflected as `__errata_aggregate__/0` so the
+  # runtime helpers can ask a type whether it aggregates without the caller
+  # having to say so.
+  defp aggregate?(opts), do: Keyword.get(opts, :aggregate, false) == true
+
+  defp validate_aggregate_opt!(module_name, opts) do
+    case Keyword.get(opts, :aggregate, false) do
+      value when is_boolean(value) ->
+        :ok
+
+      other ->
+        raise ArgumentError,
+              ":aggregate for #{inspect(module_name)} must be true or false, got: #{inspect(other)}"
+    end
+  end
+
+  defp define_aggregate_reflection(opts) do
+    aggregate? = aggregate?(opts)
+
+    quote do
+      @doc false
+      def __errata_aggregate__, do: unquote(aggregate?)
+    end
+  end
+
   defp define_attributes(module_name) do
     quote do
       @__errata_error_module__ unquote(module_name)
@@ -555,14 +648,21 @@ defmodule Errata.Errors do
     default_message = Keyword.get(opts, :default_message)
     default_reason = Keyword.get(opts, :default_reason)
 
+    # The `:errors` field exists only on aggregate types. Adding it everywhere
+    # would put an always-empty list on every error struct and make `is_error/1`
+    # ambiguous about what an aggregate is.
+    aggregate_fields = if aggregate?(opts), do: [errors: []], else: []
+
     quote do
-      defexception __errata_error__: true,
-                   kind: unquote(kind),
-                   message: unquote(default_message),
-                   reason: unquote(default_reason),
-                   context: nil,
-                   cause: nil,
-                   env: nil
+      defexception [
+                     __errata_error__: true,
+                     kind: unquote(kind),
+                     message: unquote(default_message),
+                     reason: unquote(default_reason),
+                     context: nil,
+                     cause: nil,
+                     env: nil
+                   ] ++ unquote(aggregate_fields)
 
       @impl Exception
       def exception(params) do
