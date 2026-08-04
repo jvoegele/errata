@@ -76,6 +76,14 @@ defmodule Errata.Error do
       error's kind: `:infrastructure` errors are retryable, `:domain` and `:general` errors are
       not. The generated `retryable?/1` is overridable, so it can instead be defined to decide
       from the error's `:reason` or `:context`.
+    * `:redact` - a list of context keys whose values are sensitive, replaced with
+      `"[REDACTED]"` everywhere Errata serializes the context: `c:to_map/1` and the JSON
+      encoding, `Errata.log/2` metadata, and `Errata.report/2` telemetry metadata. Redaction
+      is recursive and matches atom and binary keys alike, so `redact: [:password]` covers a
+      password nested inside a captured params map with string keys. The error struct keeps
+      the real values, so they remain available locally for debugging. Defaults to `[]`; add a
+      global floor with `config :errata, redact: [...]`. The generated `redact_context/1` is
+      overridable for rules a key list can't express. See `Errata.Redaction`.
     * `:kind` - the "kind" of Errata error to create, one of `:domain`, `:infrastructure`, or
       `:general` (which is the default)
 

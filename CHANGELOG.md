@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Redaction of sensitive values in error context (#35). Errata encourages capturing
+  arbitrary metadata in `:context` and then ships it outward — `to_map/1` and the JSON
+  encoding, `Errata.log/2` as Logger metadata, `Errata.report/2` as telemetry metadata.
+  There was no way to keep a value out of that path, so `context: %{params: params}`
+  put a password in the log aggregator. Unlike the other items on the list this was a
+  safety gap rather than a missing feature: the default behavior was the unsafe one and
+  nothing in the docs said so.
+  - A `:redact` option declares a type's sensitive keys:
+
+    ```elixir
+    use Errata.DomainError, redact: [:password, :token]
+    ```
+
+  - Redaction is **recursive** and matches atom and binary keys alike. This is the
+    point rather than a bonus: the common leak is not `%{password: pw}` but a params
+    map captured wholesale, where the sensitive key is nested and has a string key.
+  - It applies at the **serialization seam**, not at creation, so the struct you hold
+    keeps the real values for local debugging. Only what Errata emits is redacted.
+  - `config :errata, redact: [...]` sets a global floor for every error type. The
+    default is `[]` — nothing changes shape until an application opts in.
+  - The generated `redact_context/1` is overridable for rules a key list cannot
+    express, and every serialization seam dispatches through it, so an override
+    applies to all of them rather than the one its author was looking at.
+  - `Errata.Redaction` is public, so custom overrides can reuse the recursive walk.
+
+### Changed
+- `Errata.report/2` telemetry metadata now carries the `:error` struct with its context
+  redacted, not just the separate `:context` key (#35). Leaving the raw struct there
+  would have made redaction pointless in the case it exists for — a handler forwarding
+  `metadata.error` to an external service would ship the unredacted context. The struct
+  is otherwise untouched: same type, same reason, still pattern-matchable and
+  re-raisable. This only affects error types that declare `:redact` keys or applications
+  that set the global config; with neither, metadata is unchanged.
+
 ## [1.4.0] - 2026-07-31
 
 ### Added
