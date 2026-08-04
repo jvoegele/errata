@@ -21,45 +21,57 @@ defmodule Errata do
   information, such as an error reason or details about the context in which the error occurred.
   """
   @type error :: %{
-          __struct__: module(),
-          __exception__: true,
-          __errata_error__: true,
-          kind: Errata.error_kind(),
-          message: String.t() | nil,
-          reason: atom() | nil,
-          context: map() | nil,
-          cause: Errata.Cause.t() | nil,
-          env: Errata.Env.t() | nil
+          required(:__struct__) => module(),
+          required(:__exception__) => true,
+          required(:__errata_error__) => true,
+          required(:kind) => Errata.error_kind(),
+          required(:message) => String.t() | nil,
+          required(:reason) => atom() | nil,
+          required(:context) => map() | nil,
+          required(:cause) => Errata.Cause.t() | nil,
+          required(:env) => Errata.Env.t() | nil,
+          # Present only on aggregate types (`use Errata.Error, aggregate: true`).
+          # Optional rather than required so an ordinary error still matches, and
+          # declared at all so code that matches on it is not unreachable.
+          optional(:errors) => [error()]
         }
 
   @typedoc """
   Type to represent Errata domain errors.
   """
   @type domain_error :: %{
-          __struct__: module(),
-          __exception__: true,
-          __errata_error__: true,
-          kind: :domain,
-          message: String.t() | nil,
-          reason: atom() | nil,
-          context: map() | nil,
-          cause: Errata.Cause.t() | nil,
-          env: Errata.Env.t() | nil
+          required(:__struct__) => module(),
+          required(:__exception__) => true,
+          required(:__errata_error__) => true,
+          required(:kind) => :domain,
+          required(:message) => String.t() | nil,
+          required(:reason) => atom() | nil,
+          required(:context) => map() | nil,
+          required(:cause) => Errata.Cause.t() | nil,
+          required(:env) => Errata.Env.t() | nil,
+          # Present only on aggregate types (`use Errata.Error, aggregate: true`).
+          # Optional rather than required so an ordinary error still matches, and
+          # declared at all so code that matches on it is not unreachable.
+          optional(:errors) => [error()]
         }
 
   @typedoc """
   Type to represent Errata infrastructure errors.
   """
   @type infrastructure_error :: %{
-          __struct__: module(),
-          __exception__: true,
-          __errata_error__: true,
-          kind: :infrastructure,
-          message: String.t() | nil,
-          reason: atom() | nil,
-          context: map() | nil,
-          cause: Errata.Cause.t() | nil,
-          env: Errata.Env.t() | nil
+          required(:__struct__) => module(),
+          required(:__exception__) => true,
+          required(:__errata_error__) => true,
+          required(:kind) => :infrastructure,
+          required(:message) => String.t() | nil,
+          required(:reason) => atom() | nil,
+          required(:context) => map() | nil,
+          required(:cause) => Errata.Cause.t() | nil,
+          required(:env) => Errata.Env.t() | nil,
+          # Present only on aggregate types (`use Errata.Error, aggregate: true`).
+          # Optional rather than required so an ordinary error still matches, and
+          # declared at all so code that matches on it is not unreachable.
+          optional(:errors) => [error()]
         }
 
   @doc """
@@ -569,6 +581,46 @@ defmodule Errata do
   end
 
   @doc """
+  Returns the member errors of an aggregate, or `[]` for an ordinary error.
+
+  Returning `[]` rather than raising for a non-aggregate means calling code can
+  treat every error uniformly — an ordinary error is simply an error with no
+  members — instead of branching on `aggregate?/1` first:
+
+      for member <- Errata.errors(error) do
+        Logger.warning(Exception.message(member))
+      end
+
+  See `Errata.Aggregate` for how aggregates merge severity, retryability, and
+  HTTP status across their members.
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec errors(error()) :: [error()]
+  def errors(%{errors: errors} = error) when is_error(error) and is_list(errors), do: errors
+  def errors(error) when is_error(error), do: []
+
+  def errors(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Returns `true` if `error` is an aggregate — a type declared with
+  `aggregate: true`, which can hold member errors.
+
+  Note this is about the *type*, not the contents: an aggregate with no members
+  is still an aggregate.
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec aggregate?(error()) :: boolean()
+  def aggregate?(error) when is_error(error), do: Errata.Errors.aggregate_type?(error)
+
+  def aggregate?(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
   Logs `error` at the given `level` with its structured fields attached as Logger
   metadata.
 
@@ -675,7 +727,7 @@ defmodule Errata do
     context = Errata.Errors.redacted_context(error)
 
     %{
-      error: %{error | context: context},
+      error: redacted_error(error, context),
       kind: error.kind,
       reason: error.reason,
       error_type: error.__struct__,
@@ -685,6 +737,17 @@ defmodule Errata do
       context: context
     }
   end
+
+  # An aggregate's members carry contexts of their own, each with its own
+  # redaction rules. Redacting only the container's context would leave every
+  # member's raw context reachable through `metadata.error.errors` — the same
+  # hole the struct-level redaction above exists to close, one level down.
+  defp redacted_error(%{errors: errors} = error, context) when is_list(errors) do
+    members = Enum.map(errors, &redacted_error(&1, Errata.Errors.redacted_context(&1)))
+    %{error | context: context, errors: members}
+  end
+
+  defp redacted_error(error, context), do: %{error | context: context}
 
   defp log_metadata(error) do
     [

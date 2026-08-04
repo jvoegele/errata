@@ -84,6 +84,12 @@ defmodule Errata.Error do
       the real values, so they remain available locally for debugging. Defaults to `[]`; add a
       global floor with `config :errata, redact: [...]`. The generated `redact_context/1` is
       overridable for rules a key list can't express. See `Errata.Redaction`.
+    * `:aggregate` - when `true`, this type can hold member errors, for the "several things
+      went wrong at once" shape that validation produces. Adds an `:errors` field (a list of
+      Errata errors, empty by default) that `new/1` and `create/1` accept, includes the members
+      in `c:to_map/1` and the message, and merges `severity/1`, `retryable?/1`, and
+      `http_status/1` across them — each by a different rule, and each still overridable. Members
+      must themselves be Errata errors. Defaults to `false`. See `Errata.Aggregate`.
     * `:kind` - the "kind" of Errata error to create, one of `:domain`, `:infrastructure`, or
       `:general` (which is the default)
 

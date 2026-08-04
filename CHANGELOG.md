@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ### Added
+- Aggregate errors (#36), for the "several things went wrong at once" shape that validation
+  produces. A type declared `aggregate: true` gains an `:errors` field holding member errors:
+
+  ```elixir
+  defmodule MyApp.Orders.ValidationFailed do
+    use Errata.DomainError, aggregate: true
+  end
+
+  ValidationFailed.new(errors: [email_error, age_error])
+  ```
+
+  The alternative was modelling it as one error with a list of maps in `:context`, which throws
+  away everything the library is for — each sub-failure loses its type, code, HTTP status,
+  severity, and retryability and becomes inert data. An aggregate keeps them as errors: members
+  serialize through `to_map/1` and the JSON encoders with their own types and codes, and with
+  their own redaction rules applied.
+
+  The aggregate is itself an ordinary Errata error, so `is_error/1`, raising, `{:error, _}`
+  tuples, and boundary code all keep working. `Errata.errors/1` reaches the members and returns
+  `[]` for an ordinary error, so callers never branch on whether they hold an aggregate;
+  `Errata.aggregate?/1` asks about the type.
+
+  The design work was the merge rules, and the three deliberately differ:
+
+  - **`severity/1` — the most severe member.** Severities are totally ordered, so the maximum is
+    unambiguous, and it is what a log level should be.
+  - **`retryable?/1` — retryable only if every member is.** Retrying helps only if all of it
+    could succeed next time; one permanent failure makes the retry pointless.
+  - **`http_status/1` — the members' status if they agree, otherwise the aggregate's own.**
+    There is no meaningful maximum over status codes, so picking a "highest" would be arbitrary;
+    unanimity is the only member-derived answer that is never wrong.
+
+  An empty aggregate falls back to its own declared values, and each rule stays overridable per
+  type. Members must themselves be Errata errors — a bare map cannot answer those three
+  questions, so anything else raises `ArgumentError` at construction. See `Errata.Aggregate`.
+
 - Redaction of sensitive values in error context (#35). Errata encourages capturing
   arbitrary metadata in `:context` and then ships it outward — `to_map/1` and the JSON
   encoding, `Errata.log/2` as Logger metadata, `Errata.report/2` as telemetry metadata.
@@ -33,6 +69,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `Errata.Redaction` is public, so custom overrides can reuse the recursive walk.
 
 ### Changed
+- The `error/0`, `domain_error/0`, and `infrastructure_error/0` types now carry an
+  `optional(:errors)` key, so that code matching on an aggregate's members type-checks. This is
+  additive: an ordinary error still matches, and no existing spec becomes invalid.
 - `Errata.report/2` telemetry metadata now carries the `:error` struct with its context
   redacted, not just the separate `:context` key (#35). Leaving the raw struct there
   would have made redaction pointless in the case it exists for — a handler forwarding
