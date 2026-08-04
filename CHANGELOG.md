@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ### Added
+- `Errata.reason/1`, `Errata.context/1`, and `Errata.kind/1` (#39), completing an accessor set that
+  already had `code/1`, `severity/1`, `http_status/1`, `retryable?/1`, `cause/1`, and
+  `display_message/1`. `context/1` returns `%{}` rather than `nil` for an error created without
+  context, so calling code can treat the result as a map unconditionally, and it returns the
+  *unredacted* context — redaction applies to what Errata serializes and emits, not to the error in
+  your own hands.
+
+  These are also the answer to the type-checker interaction the README documented. Measured on
+  Elixir 1.20, the picture is narrower than the issue assumed: field access after a structural
+  guard (`{:error, e} when Errata.is_error(e) -> e.reason`) is **warning-free**, and the one shape
+  that still warns — a variable bound by a bare `rescue e ->` — warns for *any* exception, not just
+  an Errata one (`e.message` on a plain `RuntimeError` warns identically). So this is ordinary
+  Elixir behaviour rather than something Errata does to you, and the accessors are a plain function
+  call that sidesteps it.
+
+  The README's info box has been rewritten accordingly, and its `Map.fetch!/2` advice dropped — that
+  workaround is no longer needed. The compile-time behaviour is now pinned by tests, so a future
+  Elixir that changes it will say so.
+
 - Aggregate errors (#36), for the "several things went wrong at once" shape that validation
   produces. A type declared `aggregate: true` gains an `:errors` field holding member errors:
 
