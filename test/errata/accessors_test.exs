@@ -122,31 +122,41 @@ defmodule ErrataAccessorsTest do
              """) == 0
     end
 
+    # Elixir gained the set-theoretic type checker in 1.17; on 1.15 and 1.16 there
+    # is nothing to emit these warnings, as the CI matrix confirmed. The advice
+    # (use an accessor) is version-independent — only the diagnostic is not.
+    @checker_present Version.match?(System.version(), ">= 1.17.0")
+
     test "direct field access inside a bare rescue does warn" do
       # The shape the accessors exist for.
-      assert warnings_for("""
-             def f(fun) do
-               fun.()
-             rescue
-               e -> e.reason
-             end
-             """) > 0
+      if @checker_present do
+        assert warnings_for("""
+               def f(fun) do
+                 fun.()
+               rescue
+                 e -> e.reason
+               end
+               """) > 0
+      end
     end
 
     test "the same warning occurs for a non-Errata exception" do
       # Which is why the README frames this as ordinary Elixir behaviour rather
       # than something Errata does to you.
-      assert warnings_for("""
-             def f(fun) do
-               fun.()
-             rescue
-               e -> e.message
-             end
-             """) > 0
+      if @checker_present do
+        assert warnings_for("""
+               def f(fun) do
+                 fun.()
+               rescue
+                 e -> e.message
+               end
+               """) > 0
+      end
     end
 
     test "field access after a structural guard is warning-free" do
       # The case the old info box told people to work around with `Map.fetch!/2`.
+      # Verified clean on every version the CI matrix covers, 1.15 through 1.20.
       assert warnings_for("def f({:error, e}) when Errata.is_error(e), do: e.reason") == 0
     end
   end

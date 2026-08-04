@@ -468,9 +468,9 @@ iex> case {:error, OrderNotFound.new(reason: :not_found)} do
 > specific type — `e in [PaymentDeclined] -> e.reason` — when you know it.
 >
 > Field access after a *structural guard* (`{:error, e} when Errata.is_error(e)`)
-> is warning-free on current Elixir; the checker handles it. Earlier 1.18-era
-> releases were stricter, which is why previous versions of this guide suggested
-> `Map.fetch!/2` — that workaround is no longer needed.
+> is warning-free — verified on every Elixir this library supports, 1.15 through
+> 1.20. Earlier versions of this guide suggested `Map.fetch!/2` for that case;
+> that workaround is not needed.
 
 ### Mapping errors to HTTP status codes
 

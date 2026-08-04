@@ -23,8 +23,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   call that sidesteps it.
 
   The README's info box has been rewritten accordingly, and its `Map.fetch!/2` advice dropped — that
-  workaround is no longer needed. The compile-time behaviour is now pinned by tests, so a future
-  Elixir that changes it will say so.
+  workaround is not needed. Structural-guard field access is verified warning-free across the whole
+  supported range, 1.15 through 1.20; the bare-`rescue` warning appears from 1.17, when the type
+  checker landed. The compile-time behaviour is now pinned by tests, so a future Elixir that
+  changes it will say so.
 
 - Aggregate errors (#36), for the "several things went wrong at once" shape that validation
   produces. A type declared `aggregate: true` gains an `:errors` field holding member errors:
