@@ -271,6 +271,11 @@ defmodule Errata do
   user (for example, the body of a `4xx` HTTP response), supplying your own
   fallback for the `nil` case.
 
+  This delegates to the error module's generated `display_message/1` function,
+  which returns the `:message` field unless the type overrides it. Override it to
+  compute a user-facing message from the error's `:reason` or `:context`; the
+  override applies here and in `to_map/1` (and therefore the JSON encoding).
+
       iex> alias MyApp.Orders.PaymentDeclined
       iex> error = PaymentDeclined.new(reason: :insufficient_funds)
       iex> Errata.display_message(error)
@@ -281,7 +286,8 @@ defmodule Errata do
   Raises an `ArgumentError` if `error` is not an Errata error.
   """
   @spec display_message(error()) :: String.t() | nil
-  def display_message(error) when is_error(error), do: error.message
+  def display_message(error) when is_error(error),
+    do: error.__struct__.display_message(error)
 
   def display_message(other) do
     raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
