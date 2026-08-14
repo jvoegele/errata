@@ -101,10 +101,24 @@ defmodule Errata.Error do
   > approach is more explicit and allows for easier identification of domain errors and
   > infrastructure errors within an application.
 
-  To create instances of the error--to use as an error return value from a function, say--you can
-  use either `c:new/1` or `c:create/1`, passing params with extra information as desired. Note that
-  if you use `c:create/1`, you must first `require` the error module, since this callback is
-  implemented as a macro. For example:
+  To create instances of the error--to use as an error return value from a function, say--the
+  recommended path is `Errata.create/2`, which captures the current `__ENV__` and stacktrace into
+  the `:env` field. Because it takes the error type as an argument, a single `use Errata` covers
+  every error type the module creates, with no per-type `require`:
+
+      defmodule MyApp.SomeModule do
+        use Errata
+
+        alias MyApp.UnexpectedError
+
+        def some_function(arg) do
+          {:error, Errata.create(UnexpectedError, reason: :unexpected, context: %{arg: arg})}
+        end
+      end
+
+  The generated `c:create/1` does the same thing and reads more directly when a module works mostly
+  with one error type, at the cost of a `require` for that module, since the callback is implemented
+  as a macro:
 
       defmodule MyApp.SomeModule do
         require MyApp.UnexpectedError, as: UnexpectedError
@@ -113,6 +127,9 @@ defmodule Errata.Error do
           {:error, UnexpectedError.create(reason: :unexpected, context: %{arg: arg})}
         end
       end
+
+  `c:new/1` is a plain function that builds the error without environment info. See `c:new/1` for
+  when that is the right choice.
 
   To raise errors as exceptions, simply use `raise/2` passing extra params as the second argument
   if desired:
@@ -159,6 +176,13 @@ defmodule Errata.Error do
 
   @doc """
   Invoked to create a new instance of an error struct with the given params.
+
+  Unlike `c:create/1`, this leaves the `:env` field `nil`: it records nothing
+  about where the error was created. Prefer `c:create/1` or `Errata.create/2`
+  unless you need one of the things a macro cannot do — calling it dynamically
+  with `apply/3`, or capturing it as `&SomeError.new/1` to pass around. It is
+  also convenient in tests and fixtures, where `env: nil` keeps error structs
+  easy to compare.
   """
   @callback new(params()) :: t()
 
@@ -181,6 +205,15 @@ defmodule Errata.Error do
   details.
 
   Note that because this is a macro, callers must `require/2` the error module to be able to use it.
+  `Errata.create/2` avoids that per-module `require` — it takes the error type as an argument, so a
+  single `use Errata` (or `require Errata`) covers every error type a module creates, with the same
+  `:env` capture. Prefer it when a module works with several error types.
+
+  Capturing the environment walks the process stack, which costs on the order of a microsecond per
+  error — negligible against almost any operation that can fail, including in `with` chains at
+  request volume. The stacktrace is already capped by the VM (8 frames by default), so the cost does
+  not grow with stack depth. Reach for `c:new/1` only when you need a plain function, not to avoid
+  this cost.
   """
   @macrocallback create(params()) :: Macro.t()
 

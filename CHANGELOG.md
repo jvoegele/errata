@@ -90,6 +90,18 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - `Errata.Redaction` is public, so custom overrides can reuse the recursive walk.
 
 ### Documentation
+- `Errata.create/2` is now documented as the recommended way to create an error (#37). It captures
+  the same `:env` as the per-module `create/1` macro, but because it takes the error type as an
+  argument, a single `use Errata` covers every error type a module creates — the per-type `require`
+  that `create/1` needs is never required. The README and the `Errata.Error` moduledoc now lead with
+  it.
+- `c:Errata.Error.create/1` documents the cost of capturing the environment: on the order of a
+  microsecond per error, and flat with respect to stack depth, since the VM already caps the
+  captured stacktrace at 8 frames. Explicitly *not* a reason to reach for `c:Errata.Error.new/1`.
+- `c:Errata.Error.new/1` says what it is actually for, rather than reading as a trap: the cases a
+  macro cannot serve — dynamic invocation via `apply/3`, capturing as `&SomeError.new/1` — plus
+  tests and fixtures, where `env: nil` keeps error structs easy to compare.
+
 - A new "Design notes" guide (`guides/design.md`, #38) covering the `:kind` taxonomy from the
   user's side: what each kind actually decides, how to choose one, where external-service errors
   belong, and how to opt out of the taxonomy entirely by defining every type with the base
