@@ -637,23 +637,57 @@ and raised-exception output. When rendering an error for an end user, use
 `Errata.display_message/1` instead, which returns just the human-readable
 `:message`.
 
-A static `:message` cannot name the thing that went wrong. Override the
-generated `display_message/1` to build the user-facing message from the error's
-`:reason` or `:context`:
+### Dynamic messages
+
+A static `:default_message` cannot name the thing that went wrong — it can say
+"the item is out of stock" but not _which_ item. Rather than building the string
+by hand at every call site, override the generated `display_message/1` to compute
+it from the error's `:reason` or `:context`, once, where the type is defined:
 
 ```elixir
-defmodule MyApp.Orders.OrderNotFound do
-  use Errata.DomainError, default_message: "the requested order does not exist"
+defmodule MyApp.Orders.ItemOutOfStock do
+  use Errata.DomainError, default_message: "the item is out of stock"
 
-  def display_message(%{context: %{order_id: id}}), do: "order #{id} does not exist"
+  def display_message(%{context: %{sku: sku, available: available}}),
+    do: "only #{available} of #{sku} left in stock"
+
   def display_message(error), do: error.message
 end
 ```
 
 `Errata.display_message/1` and `Errata.to_map/1` both dispatch through it, so the
-override reaches the JSON encoding and anything else rendering the error for a
-user. The developer message is unaffected — override `message/1` for that
-instead, which applies to `Exception.message/1`, `to_string/1`, and `raise`.
+computed message reaches the JSON encoding and anything else rendering the error
+for a user. Keep a final clause returning `error.message` so the type still has a
+sensible message when the context it wants is absent:
+
+```elixir
+iex> alias MyApp.Orders.ItemOutOfStock
+iex> error = ItemOutOfStock.new(reason: :insufficient_stock, context: %{sku: "ABC-1", available: 2})
+iex> Errata.display_message(error)
+"only 2 of ABC-1 left in stock"
+iex> Errata.to_map(error).message
+"only 2 of ABC-1 left in stock"
+iex> Errata.display_message(ItemOutOfStock.new(reason: :insufficient_stock))
+"the item is out of stock"
+```
+
+This is a plain function rather than a template syntax, so it is just pattern
+matching: one clause per shape of context, with the compiler checking it and no
+separate interpolation language to learn.
+
+The developer message is deliberately unaffected by the override above:
+
+```elixir
+iex> alias MyApp.Orders.ItemOutOfStock
+iex> error = ItemOutOfStock.new(reason: :insufficient_stock, context: %{sku: "ABC-1", available: 2})
+iex> Exception.message(error)
+"the item is out of stock: :insufficient_stock"
+```
+
+Logs and raised-exception output keep the stable, greppable message while the
+specifics stay queryable in the metadata that `Errata.log/2` attaches. If you do
+want the computed detail in the developer message too, override `message/1` as
+well — that one applies to `Exception.message/1`, `to_string/1`, and `raise`.
 
 ## Reporting errors
 

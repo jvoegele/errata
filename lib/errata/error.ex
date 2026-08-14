@@ -47,7 +47,11 @@ defmodule Errata.Error do
   The following options may be provided to `use Errata.Error`:
 
     * `:default_reason` - the default value to use for the `:reason` field if it is not provided
-    * `:default_message` - the default value to use for the `:message` field if it is not provided
+    * `:default_message` - the default value to use for the `:message` field if it is not provided.
+      This is a static string; to compute a user-facing message from the error's `:reason` or
+      `:context` (naming the particular order or item, say), override the generated
+      `display_message/1` function instead — `Errata.display_message/1` and `c:to_map/1` both
+      dispatch through it. See `Errata.display_message/1`.
     * `:reasons` - an optional list of atoms enumerating the valid reasons for this error type.
       When given, creating an error (via `c:new/1`, `c:create/1`, `c:wrap/2`, or `raise/2`) with a
       `:reason` outside this set raises an `ArgumentError`. A `nil` (unspecified) reason is always
