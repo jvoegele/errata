@@ -637,6 +637,24 @@ and raised-exception output. When rendering an error for an end user, use
 `Errata.display_message/1` instead, which returns just the human-readable
 `:message`.
 
+A static `:message` cannot name the thing that went wrong. Override the
+generated `display_message/1` to build the user-facing message from the error's
+`:reason` or `:context`:
+
+```elixir
+defmodule MyApp.Orders.OrderNotFound do
+  use Errata.DomainError, default_message: "the requested order does not exist"
+
+  def display_message(%{context: %{order_id: id}}), do: "order #{id} does not exist"
+  def display_message(error), do: error.message
+end
+```
+
+`Errata.display_message/1` and `Errata.to_map/1` both dispatch through it, so the
+override reaches the JSON encoding and anything else rendering the error for a
+user. The developer message is unaffected — override `message/1` for that
+instead, which applies to `Exception.message/1`, `to_string/1`, and `raise`.
+
 ## Reporting errors
 
 Because an Errata error carries its full context, it is straightforward to get

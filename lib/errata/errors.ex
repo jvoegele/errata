@@ -140,7 +140,7 @@ defmodule Errata.Errors do
       error_type: inspect(error_type),
       code: error_type.code(error),
       reason: error.reason,
-      message: error.message,
+      message: error_type.display_message(error),
       cause: cause_map(error.cause),
       env: Errata.Env.to_map(error.env),
       context: context_map(error)
@@ -222,6 +222,7 @@ defmodule Errata.Errors do
     severity_def = define_severity(module_name, opts)
     retryable_def = define_retryable(kind, module_name, opts)
     redact_def = define_redact_context(module_name, opts)
+    display_message_def = define_display_message()
     exception_def = define_exception(kind, opts)
     errata_error_impl = define_errata_error_callbacks()
     string_chars_impl = define_string_chars_impl(module_name)
@@ -237,6 +238,7 @@ defmodule Errata.Errors do
       unquote(severity_def)
       unquote(retryable_def)
       unquote(redact_def)
+      unquote(display_message_def)
       unquote(exception_def)
       unquote(errata_error_impl)
       unquote(string_chars_impl)
@@ -392,6 +394,37 @@ defmodule Errata.Errors do
         raise ArgumentError,
               ":severity for #{inspect(module_name)} must be one of the Logger levels " <>
                 "#{inspect(@severity_levels)}, got: #{inspect(other)}"
+    end
+  end
+
+  # Generate the overridable `display_message/1` function. Like the classification
+  # functions above it is a plain, overridable function that `Errata.display_message/1`
+  # and `to_map/1` dispatch through, so a type can compute a user-facing message from
+  # its `:reason` or `:context` and have that reach every place a display message is
+  # read. The default returns the `:message` field unchanged.
+  defp define_display_message do
+    doc = """
+    Returns the user-facing _display message_ for this error (the `:message` field by default).
+
+    This is distinct from `Exception.message/1`, which also includes the error's `:reason` and is
+    aimed at developers. Override this function to compute a message from the error's `:reason` or
+    `:context`:
+
+        def display_message(%{context: %{order_id: id}}), do: "order \#{id} does not exist"
+        def display_message(error), do: error.message
+
+    `Errata.display_message/1` and `Errata.to_map/1` both dispatch through this function, so an
+    override applies to the JSON encoding and to anything rendering the error for a user. See also
+    `Errata.display_message/1`.
+    """
+
+    quote do
+      @doc unquote(doc)
+      @spec display_message(Errata.error()) :: String.t() | nil
+      def display_message(error)
+      def display_message(%{message: message}), do: message
+
+      defoverridable display_message: 1
     end
   end
 
@@ -742,10 +775,15 @@ defmodule Errata.Errors do
     end
   end
 
+  # `to_string/1` and `Exception.message/1` are documented as the same
+  # developer-oriented rendering, so this dispatches through the error module's
+  # `message/1` rather than calling `format_message/1` directly. Calling it
+  # directly meant an overridden `message/1` applied to `Exception.message/1` and
+  # `raise` but not to `to_string/1`, which silently diverged.
   defp define_string_chars_impl(error_module) do
     quote do
       defimpl String.Chars, for: unquote(error_module) do
-        def to_string(errata_error), do: Errata.Errors.format_message(errata_error)
+        def to_string(errata_error), do: unquote(error_module).message(errata_error)
       end
     end
   end

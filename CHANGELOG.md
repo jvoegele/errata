@@ -89,6 +89,32 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
     applies to all of them rather than the one its author was looking at.
   - `Errata.Redaction` is public, so custom overrides can reuse the recursive walk.
 
+### Added
+- Generated error types now have an overridable `display_message/1` function (#45), so a type can
+  compute its user-facing message from its `:reason` or `:context` rather than being limited to a
+  static `:default_message`:
+
+      defmodule MyApp.Orders.OrderNotFound do
+        use Errata.DomainError, default_message: "the requested order does not exist"
+
+        def display_message(%{context: %{order_id: id}}), do: "order #{id} does not exist"
+        def display_message(error), do: error.message
+      end
+
+  `Errata.display_message/1` and `Errata.to_map/1` (and therefore the JSON encoding) now dispatch
+  through it, so an override reaches every place a user-facing message is read. This brings
+  `display_message/1` in line with `http_status/1`, `code/1`, `severity/1`, and `retryable?/1`,
+  which were already generated-overridable-and-delegated; it was the only one reading the struct
+  field directly. The default returns the `:message` field unchanged, so behavior is unchanged for
+  types that do not override it.
+
+### Fixed
+- `to_string/1` (the `String.Chars` implementation) now respects an overridden `message/1` (#45).
+  It called the internal message formatter directly, so a type that overrode `message/1` got its
+  custom rendering from `Exception.message/1`, `raise`, and `Errata.log/2`, but silently got the
+  default from `to_string/1` — despite the two being documented as the same developer-oriented
+  message. `to_string/1` and `Exception.message/1` now always agree.
+
 ### Documentation
 - `Errata.create/2` is now documented as the recommended way to create an error (#37). It captures
   the same `:env` as the per-module `create/1` macro, but because it takes the error type as an
