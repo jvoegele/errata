@@ -109,6 +109,26 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   types that do not override it.
 
 ### Documentation
+- The README is split into a short front page plus guides (#40). It was 955 lines, and everything
+  added since 1.0 had landed in one linear page — the cumulative effect overstated what a reader
+  has to learn to start. The front page now covers what Errata is, the quick start, defining error
+  types, creating and raising them, and an index; four new guides under `guides/` cover the rest:
+
+    * `guides/handling-errors.md` — the guards, `use Errata`, values vs. rescuing.
+    * `guides/boundaries.md` — HTTP status, external codes, severity and retryability, and
+      rendering an error for a user.
+    * `guides/wrapping-errors.md` — `wrap/2` and cause chains, context enrichment, and aggregates.
+    * `guides/observability.md` — `log/2`, `report/2`, the telemetry contract, and redaction.
+
+  `guides/design.md` gains the "type vs. reason" and "Why Errata?" material alongside the `:kind`
+  guidance it already held. Doctest coverage moved with the content rather than being lost: the 23
+  README doctests are now 16 on the front page plus 7 in the guides, run by `doctest_file/1` in the
+  new `test/guides_test.exs`.
+- The shared doctest fixtures (`MyApp.Orders.*`) moved from the top of `test/errata_test.exs` into
+  `test/support/my_app.ex`, so that any single test file needing them can be run on its own. This
+  also makes `elixirc_paths(:test)`'s long-standing `test/support` entry point at a directory that
+  exists.
+
 - A "Dynamic messages" section in the README (#23) showing how to compute a user-facing message
   from an error's `:reason` or `:context` by overriding `display_message/1`, rather than building
   the string by hand at every call site. This is the answer to message templating: a plain function
