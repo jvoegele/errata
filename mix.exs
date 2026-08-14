@@ -66,8 +66,12 @@ defmodule Errata.MixProject do
     [
       main: "Errata",
       extras: [
+        "guides/design.md": [title: "Design notes"],
         "CHANGELOG.md": [title: "Changelog"],
         LICENSE: [title: "License"]
+      ],
+      groups_for_extras: [
+        Guides: ~r/guides\//
       ],
       filter_modules: fn _module, meta ->
         # This allows us to tag modules as internal and exclude them from the API docs as follows:

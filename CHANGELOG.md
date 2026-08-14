@@ -89,6 +89,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
     applies to all of them rather than the one its author was looking at.
   - `Errata.Redaction` is public, so custom overrides can reuse the recursive walk.
 
+### Documentation
+- A new "Design notes" guide (`guides/design.md`, #38) covering the `:kind` taxonomy from the
+  user's side: what each kind actually decides, how to choose one, where external-service errors
+  belong, and how to opt out of the taxonomy entirely by defining every type with the base
+  `Errata.Error`. Two points it makes plainly that the reference docs did not: `kind` supplies
+  defaults for `http_status/1` and `retryable?/1` only — `severity/1` and `code/1` do not derive
+  from it — and the `http_status/1` default is a starting point that domain errors often override,
+  while the `retryable?/1` default is usually right. The guide's examples are pinned by
+  `test/errata/design_guide_test.exs`, since they are module definitions rather than doctests.
+
 ### Changed
 - The `error/0`, `domain_error/0`, and `infrastructure_error/0` types now carry an
   `optional(:errors)` key, so that code matching on an aggregate's members type-checks. This is

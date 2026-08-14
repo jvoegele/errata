@@ -121,6 +121,9 @@ domain logic, by contrast, you generally dispatch on the specific error _type_.
 In short: an error's **kind** decides how the boundary treats it, while its
 **type** decides how your domain logic behaves.
 
+For how to choose a kind, what each one defaults to, and how to opt out of the
+taxonomy entirely, see the [design notes](guides/design.md).
+
 ## Defining custom error types
 
 Most errors in an application are either domain errors or infrastructure errors,
