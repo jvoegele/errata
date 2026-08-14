@@ -8,6 +8,17 @@ defmodule MyApp.Orders.PaymentDeclined do
   use Errata.DomainError, default_message: "the payment was declined"
 end
 
+# Backs the "Dynamic messages" doctests: a type whose user-facing message is
+# computed from its context, with the static `:default_message` as the fallback.
+defmodule MyApp.Orders.ItemOutOfStock do
+  use Errata.DomainError, default_message: "the item is out of stock"
+
+  def display_message(%{context: %{sku: sku, available: available}}),
+    do: "only #{available} of #{sku} left in stock"
+
+  def display_message(error), do: error.message
+end
+
 # A minimal :logger handler that forwards received log events to a test process,
 # so `Errata.log/2`'s structured metadata can be asserted directly.
 defmodule ErrataTest.LogHandler do

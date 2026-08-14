@@ -108,6 +108,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   field directly. The default returns the `:message` field unchanged, so behavior is unchanged for
   types that do not override it.
 
+### Documentation
+- A "Dynamic messages" section in the README (#23) showing how to compute a user-facing message
+  from an error's `:reason` or `:context` by overriding `display_message/1`, rather than building
+  the string by hand at every call site. This is the answer to message templating: a plain function
+  and pattern matching, with no template syntax to learn and no missing-key failure mode. The
+  examples are doctests, including the one showing that the override deliberately does *not* change
+  the developer message that `Exception.message/1` and logs use. The `:default_message` option docs
+  now point at it.
+
 ### Fixed
 - `to_string/1` (the `String.Chars` implementation) now respects an overridden `message/1` (#45).
   It called the internal message formatter directly, so a type that overrode `message/1` got its
