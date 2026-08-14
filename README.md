@@ -179,17 +179,48 @@ while leaving the _handling_ of the error to callers further up the stack. The
 error can then be logged or reported at a system boundary without losing any of
 its context.
 
-There are two ways to create an error. `new/1` builds an error from the given
-params but leaves the `:env` field `nil`:
+There are three ways to create an error. They differ in how much setup they need
+and in whether they record where the error came from.
+
+**`Errata.create/2` is the one to reach for by default.** It captures the current
+`__ENV__` and stacktrace into the `:env` field, and because it takes the error
+type as an argument, a single `use Errata` covers every error type the module
+creates — there is no per-type `require`:
 
 ```elixir
+iex> require Errata
 iex> alias MyApp.Orders.OrderNotFound
-iex> OrderNotFound.new(reason: :not_found, context: %{order_id: 42})
-%OrderNotFound{reason: :not_found, context: %{order_id: 42}, env: nil}
+iex> error = Errata.create(OrderNotFound, reason: :not_found, context: %{order_id: 42})
+iex> error.reason
+:not_found
+iex> match?(%Errata.Env{}, error.env)
+true
 ```
 
-`create/1` additionally captures the current `__ENV__` and stacktrace into the
-`:env` field. Because it is a macro, the error module must be `require`d first:
+In a real module, write `use Errata` rather than `require Errata` — it does the
+same `require` and brings the [guards](#handling-errors) into scope at the same
+time:
+
+```elixir
+defmodule MyApp.Orders do
+  use Errata
+
+  alias MyApp.Orders.OrderNotFound
+  alias MyApp.Orders.PaymentDeclined
+
+  def find(id) do
+    {:error, Errata.create(OrderNotFound, reason: :not_found, context: %{order_id: id})}
+  end
+
+  def pay(_order) do
+    {:error, Errata.create(PaymentDeclined, reason: :insufficient_funds)}
+  end
+end
+```
+
+**`create/1` on the error module** does exactly the same thing, and reads a
+little more directly when a module works mostly with one error type. It is a
+macro on the error module, so that module must be `require`d:
 
 ```elixir
 iex> require MyApp.Orders.OrderNotFound, as: OrderNotFound
@@ -202,36 +233,37 @@ iex> match?(%Errata.Env{stacktrace: stacktrace} when is_list(stacktrace), error.
 true
 ```
 
-> #### Prefer `create/1` to capture context {: .tip}
->
-> Because `new/1` leaves the `:env` field `nil`, it discards the module,
-> function, file, line, and stacktrace of the error's origin — often the most
-> useful information when debugging or reporting an error. Prefer `create/1`
-> (or `Errata.create/2`, below) unless you have a specific reason not to capture
-> this context.
-
-The `create/1` macro must be `require`d for each error module. As an
-alternative, the `Errata.create/2` macro creates an error of _any_ type without
-a separate `require` for each one — convenient when a module works with several
-error types. Since you typically already `require Errata` to use the custom
-guards, you can simply `alias` your error modules and call `Errata.create/2`:
+**`new/1` is a plain function** that builds the error without environment info:
 
 ```elixir
-iex> require Errata
 iex> alias MyApp.Orders.OrderNotFound
-iex> error = Errata.create(OrderNotFound, reason: :not_found)
-iex> error.reason
-:not_found
-iex> match?(%Errata.Env{}, error.env)
-true
+iex> OrderNotFound.new(reason: :not_found, context: %{order_id: 42})
+%OrderNotFound{reason: :not_found, context: %{order_id: 42}, env: nil}
 ```
+
+> #### Which should I use? {: .tip}
+>
+> Use `Errata.create/2` — or `create/1` if you have `require`d the error module —
+> unless you have a reason not to. The module, function, file, line, and
+> stacktrace of an error's origin are often the most useful things you have when
+> debugging, and capturing them costs on the order of a microsecond, which is
+> negligible next to almost any operation that can fail. Both are macros, which
+> is what lets them see the call site at all.
+>
+> `new/1` is for the cases a macro cannot serve. It can be called dynamically —
+> `apply(OrderNotFound, :new, [params])` — where a macro raises
+> `UndefinedFunctionError`, and it can be captured as `&OrderNotFound.new/1` and
+> passed around, where capturing a macro would freeze the environment of the
+> capture site into every error it builds. It is also handy in tests and
+> fixtures, where `env: nil` keeps error structs easy to compare.
 
 However the error is created, wrap it in a tuple when returning it from a
 function:
 
 ```elixir
-{:error, OrderNotFound.new(reason: :not_found)}
+{:error, Errata.create(OrderNotFound, reason: :not_found)}
 {:error, OrderNotFound.create(reason: :not_found)}
+{:error, OrderNotFound.new(reason: :not_found)}
 ```
 
 ## Raising errors as exceptions
