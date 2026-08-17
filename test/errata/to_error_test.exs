@@ -39,6 +39,8 @@ defmodule Errata.ToErrorTest do
 
   require Errata
 
+  alias Errata.Convertible
+
   doctest Errata.UnknownError
 
   describe "to_error/2 with an Errata error" do
@@ -200,7 +202,7 @@ defmodule Errata.ToErrorTest do
     end
 
     test "can delegate to the Any implementation for cases they have no opinion on" do
-      error = Errata.Convertible.Any.to_error(:timeout, [])
+      error = Convertible.Any.to_error(:timeout, [])
 
       assert error.__struct__ == Errata.UnknownError
       assert Errata.reason(error) == :timeout
