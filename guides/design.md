@@ -172,3 +172,78 @@ end
 This is a supported way to use the library, not a workaround. Errors defined this
 way have kind `:general`, interoperate with errors that do use the taxonomy, and
 lose nothing else.
+
+## Choosing between an error type and a reason
+
+Errata errors carry both a _type_ (the module) and an optional `:reason` atom,
+and it is not always obvious which to reach for. As a rule of thumb:
+
+- Use a **distinct error type** for each condition that callers may want to
+  handle differently or that has its own meaning in the domain. The type is the
+  primary identity of an error and the thing you pattern match on.
+- Use the **`:reason`** field to _sub-classify_ within a single error type — to
+  distinguish variations of the same error that share handling but differ in
+  cause.
+
+For example, a single `PaymentDeclined` domain error can use `:reason` to record
+why the payment was declined, rather than defining a separate type for each
+cause:
+
+```elixir
+PaymentDeclined.create(reason: :insufficient_funds)
+PaymentDeclined.create(reason: :fraud_suspected)
+```
+
+Conversely, a `:reason` that merely restates the type name (such as
+`OrderNotFound.create(reason: :order_not_found)`) adds no information and can be
+omitted.
+
+When a type's reasons form a known, closed set, you can **declare them** with the
+`:reasons` option. Errata then rejects any reason outside the set (a `nil`,
+unspecified reason is always allowed) and generates a `reason/0` type enumerating
+them, so the valid reasons are part of the type's documented contract:
+
+```elixir
+defmodule MyApp.Orders.PaymentDeclined do
+  use Errata.DomainError,
+    reasons: [:insufficient_funds, :fraud_suspected, :card_expired]
+end
+
+PaymentDeclined.new(reason: :insufficient_funds)   # ok
+PaymentDeclined.new(reason: :mistyped)             # ** (ArgumentError) invalid reason :mistyped ...
+```
+
+This turns the guidance above from a convention into something the compiler-adjacent
+tooling and your tests can enforce. If you also set `:default_reason`, it must be one
+of the declared `:reasons`.
+
+## Why Errata?
+
+It is common in Elixir and Erlang to signal failure with an error tuple of the
+form `{:error, reason}`. All too often, though, the `reason` is a bare atom or
+(worse) a string that carries no context: it may read clearly enough in the
+surrounding code, but as a log message or error report — far from where the
+error arose — it lacks the detail needed to interpret what actually happened.
+
+Raising exceptions is a less common but still widespread alternative. Exceptions
+do carry some context, including a stacktrace, but they lack a common, uniform
+structure to build logging and error handling around.
+
+Errata gives all errors a uniform structure and lets them be created with full
+contextual detail, including arbitrary metadata. That context is embedded in the
+error struct, so it propagates with the error whether the error is raised or
+returned as a value, and the error is JSON-encodable so it can be reported to an
+external service such as Sentry.
+
+This pays off, in particular, in `with` expressions. When each step returns
+`{:ok, result}` or `{:error, reason}` and the `reason` lacks context, the `with`
+is forced to add an `else` clause to log or report every possible error
+meaningfully. When each error is instead a structured type carrying its own
+context, the `with` can omit the `else` clause entirely and let the error
+propagate to a boundary — such as a Phoenix controller — where it is logged or
+reported without any loss of the context needed to interpret it.
+
+Chris Keathley discusses this point in depth in his blog post
+[Good and Bad Elixir](https://keathley.io/blog/good-and-bad-elixir.html), under
+"Avoid `else` in `with` blocks".
+
