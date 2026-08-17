@@ -233,6 +233,94 @@ defmodule Errata do
   end
 
   @doc """
+  Converts any value into an Errata error.
+
+  Errata errors are returned unchanged, which makes this safe to apply to a
+  value that may already have been normalized:
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> error = OrderNotFound.new(reason: :not_found)
+      iex> Errata.to_error(error) == error
+      true
+
+  Anything else is converted through the `Errata.Convertible` protocol. With no
+  implementation for its type, a value is wrapped in an `Errata.UnknownError`,
+  keeping the original as the cause, and an atom also becomes the `:reason`:
+
+      iex> error = Errata.to_error(:timeout)
+      iex> error.__struct__
+      Errata.UnknownError
+      iex> Errata.reason(error)
+      :timeout
+      iex> Errata.cause(error)
+      :timeout
+
+  Implement `Errata.Convertible` for a type to give it a classification better
+  than "unknown" — that protocol's documentation covers when to bother:
+
+      iex> error = Errata.to_error(%MyApp.Http.Timeout{url: "https://example.com"})
+      iex> error.__struct__
+      MyApp.Http.RequestFailed
+      iex> Errata.http_status(error)
+      503
+      iex> Errata.retryable?(error)
+      true
+
+  Unlike `wrap/3`, this is a plain function rather than a macro, so it can be
+  captured and passed around (`&Errata.to_error/1`). The tradeoff is that it
+  does not populate the `:env` field: normalization usually happens in a generic
+  boundary function, where the call site is the boundary itself rather than
+  anywhere informative about the failure.
+
+  ## Options
+
+    * `:fallback` - the error type to wrap unrecognized values in; defaults to
+      `Errata.UnknownError`. Only consulted by the default conversion, since a
+      type with its own `Errata.Convertible` implementation has already decided
+      what it converts to.
+    * `:kind` and `:stacktrace` - describe the wrapped cause, as in `wrap/3`.
+
+  Any remaining options are passed as error params (`:reason`, `:message`,
+  `:context`), which is how a caller supplies a reason that the value itself
+  does not carry:
+
+      iex> error = Errata.to_error("connection reset", reason: :disconnected)
+      iex> Errata.reason(error)
+      :disconnected
+
+  ## Handling `{:error, reason}` tuples
+
+  Tuples are not unwrapped: `to_error({:error, :timeout})` normalizes the
+  two-tuple itself, since a value that legitimately _is_ a two-tuple is
+  indistinguishable from one that means "error". Match the tuple at the call
+  site instead:
+
+      case do_something() do
+        {:ok, result} -> result
+        {:error, reason} -> {:error, Errata.to_error(reason)}
+      end
+
+  Raises `ArgumentError` if an `Errata.Convertible` implementation returns
+  something that is not an Errata error.
+  """
+  @spec to_error(term(), keyword()) :: error()
+  def to_error(value, opts \\ [])
+
+  def to_error(error, _opts) when is_error(error), do: error
+
+  def to_error(value, opts) do
+    case Errata.Convertible.to_error(value, opts) do
+      error when is_error(error) ->
+        error
+
+      other ->
+        raise ArgumentError,
+              "the Errata.Convertible implementation for #{inspect(value)} returned " <>
+                "#{inspect(other)}, which is not an Errata error"
+    end
+  end
+
+  @doc """
   Converts any Errata error to a plain, JSON-encodable map.
 
   This is the generic counterpart to the per-type `c:Errata.Error.to_map/1`

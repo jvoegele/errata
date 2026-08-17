@@ -36,6 +36,96 @@ end
 This keeps Errata free of any web-framework dependency: it hands you the status
 code, and the framework glue stays in your application.
 
+## Errors that aren't Errata errors
+
+The clause above handles the errors your application defined. A real system also
+receives errors it did not define: `{:error, :timeout}` from a client library, an
+`Ecto.Changeset`, a `DBConnection.ConnectionError`. Those do not satisfy
+`Errata.is_error/1`, and the accessors raise on them rather than guessing —
+`Errata.http_status(:timeout)` is a programming error, not a `500`.
+
+`Errata.to_error/2` converts any value into an Errata error, so the boundary has
+one shape to handle instead of a clause per foreign type:
+
+```elixir
+iex> error = Errata.to_error(:timeout)
+iex> Errata.http_status(error)
+500
+iex> Errata.root_cause(error)
+:timeout
+```
+
+A value Errata knows nothing about becomes an `Errata.UnknownError` — a `500`
+that is not retryable — keeping the original as its cause, so nothing is
+discarded on the way through. Errata errors are returned unchanged, which makes
+the call safe to apply to something that may already be one.
+
+Tuples are not unwrapped, since a value that legitimately _is_ a two-tuple can't
+be told apart from one that means "error". Match at the call site instead:
+
+```elixir
+case Repo.transaction(fun) do
+  {:ok, result} -> {:ok, result}
+  {:error, reason} -> {:error, Errata.to_error(reason)}
+end
+```
+
+### Teaching Errata about a foreign type
+
+A `500` is the right answer for a genuinely unknown value and the wrong answer
+for a changeset, which is a `422`, or a connection timeout, which is a retryable
+`503`. Implement the `Errata.Convertible` protocol to give a foreign type the
+classification it deserves:
+
+```elixir
+defimpl Errata.Convertible, for: Ecto.Changeset do
+  def to_error(changeset, _opts) do
+    MyApp.ValidationFailed.new(
+      reason: :invalid,
+      context: %{errors: MyApp.Changeset.error_map(changeset)},
+      cause: changeset
+    )
+  end
+end
+```
+
+`Errata.to_error/2` dispatches through that implementation, and everything
+downstream reads the classification from the error type it returned:
+
+```elixir
+iex> error = Errata.to_error(%MyApp.Http.Timeout{url: "https://example.com"})
+iex> Errata.http_status(error)
+503
+iex> Errata.retryable?(error)
+true
+iex> Errata.reason(error)
+:timeout
+```
+
+Errata implements the protocol for `Any` and nothing else. Every other type —
+including `Atom`, `Tuple` and `BitString` — is deliberately left free, because a
+protocol implementation can only be defined once: any type Errata claimed would
+be a type your application could not claim. If you _do_ want `{:error, reason}`
+tuples unwrapped, that decision is yours to make in a `Tuple` implementation.
+
+The fallback controller then loses its hand-written clauses, including the guard:
+
+```elixir
+def call(conn, {:error, error}) do
+  error = Errata.to_error(error)
+
+  conn
+  |> put_status(Errata.http_status(error))
+  |> put_view(MyApp.ErrorView)
+  |> render("error.json", error: error)
+end
+```
+
+Writing one implementation per foreign type is the same amount of thinking as
+writing one clause per foreign type. What changes is that the classification is
+stated once, next to the type it describes, and that a type you have not gotten
+to yet still arrives as something the boundary can render, log and count.
+
 ## Stable external error codes
 
 The only type identity `to_map/1` exposes is the module name

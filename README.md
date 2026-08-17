@@ -271,7 +271,8 @@ cover the rest, each one self-contained:
   * **[Handling errors](guides/handling-errors.md)** — the guards, `use Errata`,
     and matching on errors as values versus rescuing them as exceptions.
   * **[Errors at a boundary](guides/boundaries.md)** — HTTP status codes, stable
-    external codes, severity and retryability, and rendering an error for a user.
+    external codes, severity and retryability, normalizing errors your
+    application did not define, and rendering an error for a user.
   * **[Wrapping and composing errors](guides/wrapping-errors.md)** — wrapping a
     lower-level failure as a `:cause`, enriching context as an error propagates,
     and aggregate errors that carry several errors at once.

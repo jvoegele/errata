@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ### Added
+- `Errata.to_error/2` and the `Errata.Convertible` protocol (#46), for the errors an application
+  did *not* define: `{:error, :timeout}` from a client library, an `Ecto.Changeset`, a
+  `DBConnection.ConnectionError`. Errata's boundary accessors are strict on purpose —
+  `Errata.http_status(:timeout)` raises rather than guessing a `500` — so a fallback controller had
+  one uniform clause and a hand-written one for everything else.
+
+  `Errata.to_error/2` is total, and returns an Errata error unchanged so it is safe to apply to a
+  value that may already be normalized:
+
+  ```elixir
+  Errata.to_error(:timeout)        # an Errata.UnknownError, reason: :timeout, cause: :timeout
+  Errata.to_error(existing_error)  # existing_error, unchanged
+  ```
+
+  `Errata.UnknownError` is the default target, and the first concrete error type Errata itself
+  ships. It is an ordinary `:general` error — a `500`, not retryable — with the original value kept
+  as its `:cause`, so `root_cause/1` and `format_chain/1` still reach it. Pass
+  `fallback: MyApp.UnexpectedError` to land in an application's own catch-all instead. There is
+  deliberately no application config for this: a global setting would be the central registry that
+  Errata's structural `is_error/1` guard exists to avoid, and it would mean a library calling
+  `to_error/1` minted the *application's* error type.
+
+  The protocol is the part that does the real work. A `500` is right for a genuinely unknown value
+  and wrong for a changeset (a `422`) or a connection timeout (a retryable `503`), so a foreign type
+  can state its own classification once, next to itself:
+
+  ```elixir
+  defimpl Errata.Convertible, for: Ecto.Changeset do
+    def to_error(changeset, _opts) do
+      MyApp.ValidationFailed.new(reason: :invalid, cause: changeset)
+    end
+  end
+  ```
+
+  Errata implements `Errata.Convertible` for `Any` and for nothing else — not `Atom`, not `Tuple`,
+  not `BitString`. A protocol implementation can only be defined once, so any type Errata claimed
+  would be one an application could not claim without a redefinition warning. Leaving them free is
+  what makes the judgment calls the caller's: notably, whether `{:error, reason}` should unwrap.
+  Errata's own answer is no, since a value that legitimately *is* a two-tuple cannot be told apart
+  from one that means "error", but a `Tuple` implementation can decide otherwise.
+
+  This is a plain function rather than a macro, unlike `wrap/3`. That makes it capturable
+  (`&Errata.to_error/1`) at the cost of leaving `:env` nil — which is the honest result anyway,
+  since normalization happens in a generic boundary function whose location says nothing about where
+  the failure came from.
+
 - `Errata.reason/1`, `Errata.context/1`, and `Errata.kind/1` (#39), completing an accessor set that
   already had `code/1`, `severity/1`, `http_status/1`, `retryable?/1`, `cause/1`, and
   `display_message/1`. `context/1` returns `%{}` rather than `nil` for an error created without
