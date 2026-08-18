@@ -216,6 +216,13 @@ defmodule Errata do
   `c:Errata.Error.wrap/2` macro: the standard error params (`:reason`,
   `:message`, `:context`) plus `:stacktrace` and `:kind`, which describe the
   wrapped cause.
+
+  Wrapping is for when you know what a failure means — that is why it takes the
+  error type as an argument, and why it always adds a layer even around an error
+  that is already an Errata error. Where an error is on its way _out_ of the
+  system and anything at all can arrive, use `to_error/2` instead: it has no type
+  to name and leaves an already-classified error alone, where wrapping would
+  replace that error's status and user-facing message with the wrapper's.
   """
   defmacro wrap(error_module, cause, opts \\ []) do
     quote do
@@ -230,6 +237,115 @@ defmodule Errata do
         stacktrace
       )
     end
+  end
+
+  @doc """
+  Converts any value into an Errata error.
+
+  Errata errors are returned unchanged, which makes this safe to apply to a
+  value that may already have been normalized:
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> error = OrderNotFound.new(reason: :not_found)
+      iex> Errata.to_error(error) == error
+      true
+
+  Anything else is wrapped in an `Errata.UnknownError`, keeping the original as
+  the cause. An atom also becomes the `:reason`:
+
+      iex> error = Errata.to_error(:timeout)
+      iex> error.__struct__
+      Errata.UnknownError
+      iex> Errata.reason(error)
+      :timeout
+      iex> Errata.cause(error)
+      :timeout
+
+  ## When to use this rather than `wrap/3`
+
+  Both turn an arbitrary value into an Errata error. The difference is whether
+  you know what the failure means.
+
+  `wrap/3` is an act of interpretation, used where a failure is caught: you name
+  the error type because in that place you know what a dropped connection means
+  for the operation in hand, and it always adds a layer because each layer's
+  interpretation is worth keeping. `to_error/2` is used where an error leaves the
+  system and anything at all can arrive — there is no type to name, and an error
+  that already is one comes back untouched.
+
+  That last part is the reason to keep them apart. Wrapping at a boundary
+  replaces an already-correct classification with the wrapper's:
+
+      iex> require Errata
+      iex> error = MyApp.Orders.OrderNotFound.new(reason: :not_found)
+      iex> Errata.to_error(error) |> Errata.http_status()
+      422
+      iex> Errata.wrap(Errata.UnknownError, error) |> Errata.http_status()
+      500
+
+  It is also a plain function rather than a macro, so it can be captured and
+  passed around (`&Errata.to_error/1`). The tradeoff is that it does not populate
+  the `:env` field: normalization usually happens in a generic boundary function,
+  where the call site is the boundary itself rather than anywhere informative
+  about the failure.
+
+  ## Classifying the types you know
+
+  A `500` is the right answer for a genuinely unknown value and the wrong answer
+  for an `Ecto.Changeset`, which is a `422`, or a connection timeout, which is a
+  retryable `503`. This function classifies nothing on its own; it is the base
+  case beneath the types your application recognizes:
+
+      defmodule MyApp.Errors do
+        def to_error(%Ecto.Changeset{} = changeset),
+          do: MyApp.ValidationFailed.new(reason: :invalid, cause: changeset)
+
+        def to_error(other), do: Errata.to_error(other)
+      end
+
+  Keeping the recognized types in ordinary function clauses means a boundary
+  reads one function to see how errors are classified, and that the classification
+  can differ between boundaries where it needs to. See
+  [Errors at a boundary](guides/boundaries.md) for the full pattern.
+
+  ## Options
+
+    * `:fallback` - the error type to wrap unrecognized values in; defaults to
+      `Errata.UnknownError`. Useful when an application has a catch-all type of
+      its own.
+    * `:kind` and `:stacktrace` - describe the wrapped cause, as in `wrap/3`.
+
+  Any remaining options are passed as error params (`:reason`, `:message`,
+  `:context`), which is how a caller supplies a reason that the value itself
+  does not carry:
+
+      iex> error = Errata.to_error("connection reset", reason: :disconnected)
+      iex> Errata.reason(error)
+      :disconnected
+
+  ## Handling `{:error, reason}` tuples
+
+  Tuples are not unwrapped: `to_error({:error, :timeout})` normalizes the
+  two-tuple itself, since a value that legitimately _is_ a two-tuple is
+  indistinguishable from one that means "error". Match the tuple at the call
+  site instead:
+
+      case do_something() do
+        {:ok, result} -> result
+        {:error, reason} -> {:error, Errata.to_error(reason)}
+      end
+
+  Raises `ArgumentError` if `:fallback` is not an Errata error type.
+  """
+  @spec to_error(term(), keyword()) :: error()
+  def to_error(value, opts \\ [])
+
+  def to_error(error, _opts) when is_error(error), do: error
+
+  def to_error(value, opts) do
+    {fallback, opts} = Keyword.pop(opts, :fallback, Errata.UnknownError)
+
+    Errata.Errors.normalize(fallback, value, opts)
   end
 
   @doc """
@@ -639,8 +755,10 @@ defmodule Errata do
   decide from the error's `:reason` or `:context`.
 
   Errata deliberately provides no retry mechanism of its own — this is a
-  classification that _your_ retry logic (or a library such as `:retry`) can
-  branch on without knowing the error's specific type:
+  classification that _your_ retry logic, or a library such as
+  [`ExternalService`](https://hexdocs.pm/external_service) (which already uses
+  Errata for its own errors), can branch on without knowing the error's specific
+  type:
 
       case do_work() do
         {:error, error} when Errata.is_error(error) ->

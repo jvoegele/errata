@@ -36,6 +36,151 @@ end
 This keeps Errata free of any web-framework dependency: it hands you the status
 code, and the framework glue stays in your application.
 
+## Errors that aren't Errata errors
+
+The clause above handles the errors your application defined. A real system also
+receives errors it did not define: `{:error, :timeout}` from a client library, an
+`Ecto.Changeset`, a `DBConnection.ConnectionError`. Those do not satisfy
+`Errata.is_error/1`, and the accessors raise on them rather than guessing —
+`Errata.http_status(:timeout)` is a programming error, not a `500`.
+
+`Errata.to_error/2` converts any value into an Errata error, so the boundary has
+one shape to handle:
+
+```elixir
+iex> error = Errata.to_error(:timeout)
+iex> Errata.http_status(error)
+500
+iex> Errata.root_cause(error)
+:timeout
+```
+
+A value Errata knows nothing about becomes an `Errata.UnknownError` — a `500`
+that is not retryable — keeping the original as its cause, so nothing is
+discarded on the way through. Errata errors are returned unchanged, which makes
+the call safe to apply to something that may already be one.
+
+### Wrapping versus normalizing
+
+[`Errata.wrap/3`](wrapping-errors.md) also turns an arbitrary value into an
+Errata error, so the two overlap. The difference is whether you know what the
+failure means.
+
+Wrapping is an act of interpretation, and belongs where a failure is caught: you
+name the error type because in that place you know what a dropped connection
+means for the operation in hand. It always adds a layer, since each layer's
+interpretation is worth keeping.
+
+Normalizing belongs where an error leaves the system and anything at all can
+arrive. There is no type to name, and an error that already is one is returned
+untouched. That last part is why reaching for `wrap/3` at a boundary is a bug
+rather than a style choice — even wrapping in the very type `to_error/2` would
+have chosen:
+
+```elixir
+iex> require Errata
+iex> error = MyApp.Orders.OrderNotFound.new(reason: :not_found)
+iex> Errata.http_status(error)
+422
+iex> Errata.to_error(error) |> Errata.http_status()
+422
+iex> Errata.wrap(Errata.UnknownError, error) |> Errata.http_status()
+500
+iex> Errata.wrap(Errata.UnknownError, error) |> Errata.display_message()
+"an unexpected error occurred"
+```
+
+A `404` becomes a `500`, and the message the user was meant to read is replaced
+by a generic one.
+
+|                            | `wrap/3`                        | `to_error/2`                    |
+| -------------------------- | ------------------------------- | ------------------------------- |
+| do you know what it means? | yes — you name the type          | no — it is whatever arrived     |
+| where                      | where the failure is caught      | where the error leaves          |
+| given an Errata error      | adds a layer                     | returns it unchanged            |
+| form                       | macro; records the call site     | function; capturable; no `:env` |
+
+They compose rather than compete: an error wrapped on its way up keeps its full
+chain of causes, and normalizing at the edge leaves that chain intact.
+
+### Handling `{:error, reason}` tuples
+
+Tuples are not unwrapped, since a value that legitimately _is_ a two-tuple can't
+be told apart from one that means "error". Match at the call site instead:
+
+```elixir
+case Repo.transaction(fun) do
+  {:ok, result} -> {:ok, result}
+  {:error, reason} -> {:error, Errata.to_error(reason)}
+end
+```
+
+### Classifying the types you recognize
+
+A `500` is the right answer for a genuinely unknown value and the wrong answer
+for a changeset, which is a `422`, or a connection timeout, which is a retryable
+`503`. `Errata.to_error/2` classifies nothing on its own — it is the base case
+beneath the types your application recognizes:
+
+```elixir
+defmodule MyApp.Errors do
+  def to_error(%Ecto.Changeset{} = changeset) do
+    MyApp.ValidationFailed.new(
+      reason: :invalid,
+      context: %{errors: MyApp.Changeset.error_map(changeset)},
+      cause: changeset
+    )
+  end
+
+  def to_error(%MyApp.Http.Timeout{url: url} = timeout),
+    do: MyApp.Http.RequestFailed.new(reason: :timeout, context: %{url: url}, cause: timeout)
+
+  # everything else falls through to the library default
+  def to_error(other), do: Errata.to_error(other)
+end
+```
+
+Each recognized type gets the classification of the error type it converts to,
+and anything you have not gotten to yet still arrives as something the boundary
+can render, log and count:
+
+```elixir
+iex> error = MyApp.Errors.to_error(%MyApp.Http.Timeout{url: "https://example.com"})
+iex> Errata.http_status(error)
+503
+iex> Errata.retryable?(error)
+true
+iex> MyApp.Errors.to_error(:something_unforeseen) |> Errata.http_status()
+500
+```
+
+Plain function clauses rather than anything Errata-specific: one function to read
+to see how a system classifies its errors, and two boundaries can classify the
+same value differently when they need to — an admin API and a public API rarely
+want to say the same thing about a changeset.
+
+The fallback controller then loses its hand-written clauses, including the guard:
+
+```elixir
+def call(conn, {:error, error}) do
+  error = MyApp.Errors.to_error(error)
+
+  conn
+  |> put_status(Errata.http_status(error))
+  |> put_view(MyApp.ErrorView)
+  |> render("error.json", error: error)
+end
+```
+
+### Normalize at the boundary, not before it
+
+`Errata.http_status(:timeout)` raises, and that is worth keeping: inside your
+domain code it means an error escaped unclassified, which is a bug you want to
+hear about. Normalizing turns that noise into a quiet `500`, so call
+`to_error/2` where an error is on its way out of the system — a controller, a
+job runner, a message consumer — rather than in the middle of the code that
+produced it.
+
 ## Stable external error codes
 
 The only type identity `to_map/1` exposes is the module name
@@ -113,9 +258,10 @@ end
 ```
 
 Errata deliberately ships no retry mechanism of its own. `retryable?/1` is a
-classification your own retry logic (or a library such as
-[`retry`](https://hexdocs.pm/retry)) can branch on without knowing the error's
-specific type:
+classification your own retry logic — or a library such as
+[`ExternalService`](https://hexdocs.pm/external_service), which handles retries
+with backoff, rate limiting and circuit breakers, and which already uses Errata
+for its own errors — can branch on without knowing the error's specific type:
 
 ```elixir
 case do_work() do

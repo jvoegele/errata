@@ -58,6 +58,52 @@ defmodule Errata.Errors do
     create(error_type, params, env, stacktrace)
   end
 
+  @doc false
+  @spec normalize(module(), term(), keyword()) :: Errata.error()
+  def normalize(error_type, value, opts) do
+    validate_fallback!(error_type)
+
+    {cause_opts, params} = opts |> Enum.to_list() |> Keyword.split([:kind, :stacktrace])
+
+    params
+    |> Keyword.put(:cause, Errata.Cause.new(value, cause_opts))
+    |> put_derived_reason(error_type, value)
+    |> then(&create(error_type, &1))
+  end
+
+  # `Errata.to_error(:timeout)` producing `reason: :timeout` is the obviously
+  # useful behaviour, but a fallback type that declares `:reasons` would reject
+  # an undeclared atom — turning a call whose whole purpose is to stop unknown
+  # values escaping into a raise. Derive a reason only when the type accepts it.
+  defp put_derived_reason(params, error_type, value)
+       when is_atom(value) and not is_nil(value) and not is_boolean(value) do
+    if Keyword.has_key?(params, :reason) or not valid_reason?(error_type, value),
+      do: params,
+      else: Keyword.put(params, :reason, value)
+  end
+
+  defp put_derived_reason(params, _error_type, _value), do: params
+
+  defp valid_reason?(error_type, reason) do
+    case error_type.__errata_valid_reasons__() do
+      nil -> true
+      valid -> reason in valid
+    end
+  end
+
+  # A misspelled or non-Errata `:fallback` would otherwise fail deep inside
+  # `struct/2` with an UndefinedFunctionError for `__struct__/1`.
+  defp validate_fallback!(error_type) do
+    if is_atom(error_type) and Code.ensure_loaded?(error_type) and
+         function_exported?(error_type, :__errata_valid_reasons__, 0) do
+      :ok
+    else
+      raise ArgumentError,
+            ":fallback must be an Errata error type (a module that uses Errata.Error, " <>
+              "Errata.DomainError, or Errata.InfrastructureError), got: #{inspect(error_type)}"
+    end
+  end
+
   # The `:cause` param may be given as a raw value (e.g. via `new(cause: ...)`);
   # normalize it into an `Errata.Cause` struct. A `nil` cause means "no cause".
   defp normalize_cause(%{cause: nil} = error), do: error
