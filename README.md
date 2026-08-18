@@ -266,16 +266,18 @@ raise MyApp.Orders.OrderNotFound, reason: :not_found, context: %{order_id: 42}
 ## Guides
 
 The sections above are the whole of what most applications need. The guides
-cover the rest, each one self-contained:
+cover the rest, and follow the life of an error — handled, composed as it
+travels, converted where it leaves, reported:
 
   * **[Handling errors](guides/handling-errors.md)** — the guards, `use Errata`,
     and matching on errors as values versus rescuing them as exceptions.
-  * **[Errors at a boundary](guides/boundaries.md)** — HTTP status codes, stable
-    external codes, severity and retryability, normalizing errors your
-    application did not define, and rendering an error for a user.
   * **[Wrapping and composing errors](guides/wrapping-errors.md)** — wrapping a
     lower-level failure as a `:cause`, enriching context as an error propagates,
     and aggregate errors that carry several errors at once.
+  * **[Errors at a boundary](guides/boundaries.md)** — HTTP status codes, stable
+    external codes, severity and retryability, normalizing errors your
+    application did not define (and when that differs from wrapping), and
+    rendering an error for a user.
   * **[Reporting errors](guides/observability.md)** — `Errata.log/2`,
     `Errata.report/2`, the telemetry contract, and redacting sensitive context.
   * **[Design notes](guides/design.md)** — choosing a kind, choosing between an

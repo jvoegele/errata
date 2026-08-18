@@ -44,6 +44,13 @@ iex> Errata.cause(error)
 %RuntimeError{message: "boom"}
 ```
 
+Wrapping is for when you know what a failure means, which is why it takes the
+error type as an argument and always adds a layer. Where an error is on its way
+_out_ of the system and anything at all can arrive, there is no type to name and
+rewrapping would discard a classification that is already correct; reach for
+`Errata.to_error/2` there instead. See
+[Wrapping versus normalizing](boundaries.md#wrapping-versus-normalizing).
+
 The cause can be any term — another Errata error, a standard exception, or a
 plain value such as the `reason` from an `{:error, reason}` tuple. Retrieve the
 immediate cause with `Errata.cause/1`, or follow a chain of wrapped errors to

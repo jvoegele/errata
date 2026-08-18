@@ -67,8 +67,8 @@ defmodule Errata.MixProject do
       main: "Errata",
       extras: [
         "guides/handling-errors.md": [title: "Handling errors"],
-        "guides/boundaries.md": [title: "Errors at a boundary"],
         "guides/wrapping-errors.md": [title: "Wrapping and composing errors"],
+        "guides/boundaries.md": [title: "Errors at a boundary"],
         "guides/observability.md": [title: "Reporting errors"],
         "guides/design.md": [title: "Design notes"],
         "CHANGELOG.md": [title: "Changelog"],

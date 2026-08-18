@@ -60,6 +60,51 @@ that is not retryable — keeping the original as its cause, so nothing is
 discarded on the way through. Errata errors are returned unchanged, which makes
 the call safe to apply to something that may already be one.
 
+### Wrapping versus normalizing
+
+[`Errata.wrap/3`](wrapping-errors.md) also turns an arbitrary value into an
+Errata error, so the two overlap. The difference is whether you know what the
+failure means.
+
+Wrapping is an act of interpretation, and belongs where a failure is caught: you
+name the error type because in that place you know what a dropped connection
+means for the operation in hand. It always adds a layer, since each layer's
+interpretation is worth keeping.
+
+Normalizing belongs where an error leaves the system and anything at all can
+arrive. There is no type to name, and an error that already is one is returned
+untouched. That last part is why reaching for `wrap/3` at a boundary is a bug
+rather than a style choice — even wrapping in the very type `to_error/2` would
+have chosen:
+
+```elixir
+iex> require Errata
+iex> error = MyApp.Orders.OrderNotFound.new(reason: :not_found)
+iex> Errata.http_status(error)
+422
+iex> Errata.to_error(error) |> Errata.http_status()
+422
+iex> Errata.wrap(Errata.UnknownError, error) |> Errata.http_status()
+500
+iex> Errata.wrap(Errata.UnknownError, error) |> Errata.display_message()
+"an unexpected error occurred"
+```
+
+A `404` becomes a `500`, and the message the user was meant to read is replaced
+by a generic one.
+
+|                            | `wrap/3`                        | `to_error/2`                    |
+| -------------------------- | ------------------------------- | ------------------------------- |
+| do you know what it means? | yes — you name the type          | no — it is whatever arrived     |
+| where                      | where the failure is caught      | where the error leaves          |
+| given an Errata error      | adds a layer                     | returns it unchanged            |
+| form                       | macro; records the call site     | function; capturable; no `:env` |
+
+They compose rather than compete: an error wrapped on its way up keeps its full
+chain of causes, and normalizing at the edge leaves that chain intact.
+
+### Handling `{:error, reason}` tuples
+
 Tuples are not unwrapped, since a value that legitimately _is_ a two-tuple can't
 be told apart from one that means "error". Match at the call site instead:
 

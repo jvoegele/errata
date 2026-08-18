@@ -216,6 +216,13 @@ defmodule Errata do
   `c:Errata.Error.wrap/2` macro: the standard error params (`:reason`,
   `:message`, `:context`) plus `:stacktrace` and `:kind`, which describe the
   wrapped cause.
+
+  Wrapping is for when you know what a failure means — that is why it takes the
+  error type as an argument, and why it always adds a layer even around an error
+  that is already an Errata error. Where an error is on its way _out_ of the
+  system and anything at all can arrive, use `to_error/2` instead: it has no type
+  to name and leaves an already-classified error alone, where wrapping would
+  replace that error's status and user-facing message with the wrapper's.
   """
   defmacro wrap(error_module, cause, opts \\ []) do
     quote do
@@ -254,11 +261,33 @@ defmodule Errata do
       iex> Errata.cause(error)
       :timeout
 
-  Unlike `wrap/3`, this is a plain function rather than a macro, so it can be
-  captured and passed around (`&Errata.to_error/1`). The tradeoff is that it
-  does not populate the `:env` field: normalization usually happens in a generic
-  boundary function, where the call site is the boundary itself rather than
-  anywhere informative about the failure.
+  ## When to use this rather than `wrap/3`
+
+  Both turn an arbitrary value into an Errata error. The difference is whether
+  you know what the failure means.
+
+  `wrap/3` is an act of interpretation, used where a failure is caught: you name
+  the error type because in that place you know what a dropped connection means
+  for the operation in hand, and it always adds a layer because each layer's
+  interpretation is worth keeping. `to_error/2` is used where an error leaves the
+  system and anything at all can arrive — there is no type to name, and an error
+  that already is one comes back untouched.
+
+  That last part is the reason to keep them apart. Wrapping at a boundary
+  replaces an already-correct classification with the wrapper's:
+
+      iex> require Errata
+      iex> error = MyApp.Orders.OrderNotFound.new(reason: :not_found)
+      iex> Errata.to_error(error) |> Errata.http_status()
+      422
+      iex> Errata.wrap(Errata.UnknownError, error) |> Errata.http_status()
+      500
+
+  It is also a plain function rather than a macro, so it can be captured and
+  passed around (`&Errata.to_error/1`). The tradeoff is that it does not populate
+  the `:env` field: normalization usually happens in a generic boundary function,
+  where the call site is the boundary itself rather than anywhere informative
+  about the failure.
 
   ## Classifying the types you know
 
