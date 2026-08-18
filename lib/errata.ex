@@ -243,9 +243,8 @@ defmodule Errata do
       iex> Errata.to_error(error) == error
       true
 
-  Anything else is converted through the `Errata.Convertible` protocol. With no
-  implementation for its type, a value is wrapped in an `Errata.UnknownError`,
-  keeping the original as the cause, and an atom also becomes the `:reason`:
+  Anything else is wrapped in an `Errata.UnknownError`, keeping the original as
+  the cause. An atom also becomes the `:reason`:
 
       iex> error = Errata.to_error(:timeout)
       iex> error.__struct__
@@ -255,29 +254,36 @@ defmodule Errata do
       iex> Errata.cause(error)
       :timeout
 
-  Implement `Errata.Convertible` for a type to give it a classification better
-  than "unknown" — that protocol's documentation covers when to bother:
-
-      iex> error = Errata.to_error(%MyApp.Http.Timeout{url: "https://example.com"})
-      iex> error.__struct__
-      MyApp.Http.RequestFailed
-      iex> Errata.http_status(error)
-      503
-      iex> Errata.retryable?(error)
-      true
-
   Unlike `wrap/3`, this is a plain function rather than a macro, so it can be
   captured and passed around (`&Errata.to_error/1`). The tradeoff is that it
   does not populate the `:env` field: normalization usually happens in a generic
   boundary function, where the call site is the boundary itself rather than
   anywhere informative about the failure.
 
+  ## Classifying the types you know
+
+  A `500` is the right answer for a genuinely unknown value and the wrong answer
+  for an `Ecto.Changeset`, which is a `422`, or a connection timeout, which is a
+  retryable `503`. This function classifies nothing on its own; it is the base
+  case beneath the types your application recognizes:
+
+      defmodule MyApp.Errors do
+        def to_error(%Ecto.Changeset{} = changeset),
+          do: MyApp.ValidationFailed.new(reason: :invalid, cause: changeset)
+
+        def to_error(other), do: Errata.to_error(other)
+      end
+
+  Keeping the recognized types in ordinary function clauses means a boundary
+  reads one function to see how errors are classified, and that the classification
+  can differ between boundaries where it needs to. See
+  [Errors at a boundary](guides/boundaries.md) for the full pattern.
+
   ## Options
 
     * `:fallback` - the error type to wrap unrecognized values in; defaults to
-      `Errata.UnknownError`. Only consulted by the default conversion, since a
-      type with its own `Errata.Convertible` implementation has already decided
-      what it converts to.
+      `Errata.UnknownError`. Useful when an application has a catch-all type of
+      its own.
     * `:kind` and `:stacktrace` - describe the wrapped cause, as in `wrap/3`.
 
   Any remaining options are passed as error params (`:reason`, `:message`,
@@ -300,8 +306,7 @@ defmodule Errata do
         {:error, reason} -> {:error, Errata.to_error(reason)}
       end
 
-  Raises `ArgumentError` if an `Errata.Convertible` implementation returns
-  something that is not an Errata error.
+  Raises `ArgumentError` if `:fallback` is not an Errata error type.
   """
   @spec to_error(term(), keyword()) :: error()
   def to_error(value, opts \\ [])
@@ -309,15 +314,9 @@ defmodule Errata do
   def to_error(error, _opts) when is_error(error), do: error
 
   def to_error(value, opts) do
-    case Errata.Convertible.to_error(value, opts) do
-      error when is_error(error) ->
-        error
+    {fallback, opts} = Keyword.pop(opts, :fallback, Errata.UnknownError)
 
-      other ->
-        raise ArgumentError,
-              "the Errata.Convertible implementation for #{inspect(value)} returned " <>
-                "#{inspect(other)}, which is not an Errata error"
-    end
+    Errata.Errors.normalize(fallback, value, opts)
   end
 
   @doc """

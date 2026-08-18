@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ## [Unreleased]
 
 ### Added
-- `Errata.to_error/2` and the `Errata.Convertible` protocol (#46), for the errors an application
-  did *not* define: `{:error, :timeout}` from a client library, an `Ecto.Changeset`, a
+- `Errata.to_error/2` and `Errata.UnknownError` (#46), for the errors an application did *not*
+  define: `{:error, :timeout}` from a client library, an `Ecto.Changeset`, a
   `DBConnection.ConnectionError`. Errata's boundary accessors are strict on purpose —
   `Errata.http_status(:timeout)` raises rather than guessing a `500` — so a fallback controller had
   one uniform clause and a hand-written one for everything else.
@@ -29,29 +29,39 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   Errata's structural `is_error/1` guard exists to avoid, and it would mean a library calling
   `to_error/1` minted the *application's* error type.
 
-  The protocol is the part that does the real work. A `500` is right for a genuinely unknown value
-  and wrong for a changeset (a `422`) or a connection timeout (a retryable `503`), so a foreign type
-  can state its own classification once, next to itself:
+  This classifies nothing on its own, and is not meant to. A `500` is right for a genuinely unknown
+  value and wrong for a changeset (a `422`) or a connection timeout (a retryable `503`), so
+  `to_error/1` is documented as the base case beneath an application's own dispatch function rather
+  than as a replacement for one:
 
   ```elixir
-  defimpl Errata.Convertible, for: Ecto.Changeset do
-    def to_error(changeset, _opts) do
-      MyApp.ValidationFailed.new(reason: :invalid, cause: changeset)
-    end
+  defmodule MyApp.Errors do
+    def to_error(%Ecto.Changeset{} = changeset),
+      do: MyApp.ValidationFailed.new(reason: :invalid, cause: changeset)
+
+    def to_error(other), do: Errata.to_error(other)
   end
   ```
 
-  Errata implements `Errata.Convertible` for `Any` and for nothing else — not `Atom`, not `Tuple`,
-  not `BitString`. A protocol implementation can only be defined once, so any type Errata claimed
-  would be one an application could not claim without a redefinition warning. Leaving them free is
-  what makes the judgment calls the caller's: notably, whether `{:error, reason}` should unwrap.
-  Errata's own answer is no, since a value that legitimately *is* a two-tuple cannot be told apart
-  from one that means "error", but a `Tuple` implementation can decide otherwise.
+  An `Errata.Convertible` protocol was built for this and then cut before release. Every
+  implementation would have been written by the same application that calls `to_error/1` — neither
+  Ecto nor Finch is going to depend on Errata to write one, and a library that already uses Errata
+  returns Errata errors — so the open-extension property that justifies a protocol never came into
+  play, while its constraints (one implementation per type, globally, forever) did. Function clauses
+  are the simpler tool when one party owns both sides, and they let two boundaries classify the same
+  value differently. A protocol can be added later without breaking anything, which is the reason to
+  wait rather than guess.
 
-  This is a plain function rather than a macro, unlike `wrap/3`. That makes it capturable
+  `to_error/2` is a plain function rather than a macro, unlike `wrap/3`. That makes it capturable
   (`&Errata.to_error/1`) at the cost of leaving `:env` nil — which is the honest result anyway,
   since normalization happens in a generic boundary function whose location says nothing about where
   the failure came from.
+
+  Two details worth knowing: an atom becomes the `:reason` as well as the cause, but only when the
+  target type would accept it, since deriving a reason that a type's `:reasons` list rejects would
+  turn the call that exists to stop unknown values escaping into a raise. And `{:error, reason}`
+  tuples are *not* unwrapped, since a value that legitimately is a two-tuple cannot be told apart
+  from one that means "error" — match the tuple at the call site instead.
 
 - `Errata.reason/1`, `Errata.context/1`, and `Errata.kind/1` (#39), completing an accessor set that
   already had `code/1`, `severity/1`, `http_status/1`, `retryable?/1`, `cause/1`, and

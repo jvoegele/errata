@@ -27,10 +27,9 @@ defmodule MyApp.Orders.ItemOutOfStock do
   def display_message(error), do: error.message
 end
 
-# Backs the `Errata.to_error/2` and `Errata.Convertible` examples: a stand-in
-# for a foreign error struct from a dependency (something Errata knows nothing
-# about), the application's own error type for it, and the implementation that
-# joins them.
+# Backs the `Errata.to_error/2` examples: a stand-in for a foreign error struct
+# from a dependency (something Errata knows nothing about), the application's own
+# error type for it, and the dispatch function that joins them.
 defmodule MyApp.Http.Timeout do
   @moduledoc false
   defstruct [:url]
@@ -41,8 +40,13 @@ defmodule MyApp.Http.RequestFailed do
   use Errata.InfrastructureError, default_message: "the request to an upstream service failed"
 end
 
-defimpl Errata.Convertible, for: MyApp.Http.Timeout do
-  def to_error(%MyApp.Http.Timeout{url: url} = timeout, _opts) do
-    MyApp.Http.RequestFailed.new(reason: :timeout, context: %{url: url}, cause: timeout)
-  end
+defmodule MyApp.Errors do
+  @moduledoc false
+
+  alias MyApp.Http.RequestFailed
+
+  def to_error(%MyApp.Http.Timeout{url: url} = timeout),
+    do: RequestFailed.new(reason: :timeout, context: %{url: url}, cause: timeout)
+
+  def to_error(other), do: Errata.to_error(other)
 end

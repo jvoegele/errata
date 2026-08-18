@@ -45,7 +45,7 @@ receives errors it did not define: `{:error, :timeout}` from a client library, a
 `Errata.http_status(:timeout)` is a programming error, not a `500`.
 
 `Errata.to_error/2` converts any value into an Errata error, so the boundary has
-one shape to handle instead of a clause per foreign type:
+one shape to handle:
 
 ```elixir
 iex> error = Errata.to_error(:timeout)
@@ -70,49 +70,55 @@ case Repo.transaction(fun) do
 end
 ```
 
-### Teaching Errata about a foreign type
+### Classifying the types you recognize
 
 A `500` is the right answer for a genuinely unknown value and the wrong answer
 for a changeset, which is a `422`, or a connection timeout, which is a retryable
-`503`. Implement the `Errata.Convertible` protocol to give a foreign type the
-classification it deserves:
+`503`. `Errata.to_error/2` classifies nothing on its own — it is the base case
+beneath the types your application recognizes:
 
 ```elixir
-defimpl Errata.Convertible, for: Ecto.Changeset do
-  def to_error(changeset, _opts) do
+defmodule MyApp.Errors do
+  def to_error(%Ecto.Changeset{} = changeset) do
     MyApp.ValidationFailed.new(
       reason: :invalid,
       context: %{errors: MyApp.Changeset.error_map(changeset)},
       cause: changeset
     )
   end
+
+  def to_error(%MyApp.Http.Timeout{url: url} = timeout),
+    do: MyApp.Http.RequestFailed.new(reason: :timeout, context: %{url: url}, cause: timeout)
+
+  # everything else falls through to the library default
+  def to_error(other), do: Errata.to_error(other)
 end
 ```
 
-`Errata.to_error/2` dispatches through that implementation, and everything
-downstream reads the classification from the error type it returned:
+Each recognized type gets the classification of the error type it converts to,
+and anything you have not gotten to yet still arrives as something the boundary
+can render, log and count:
 
 ```elixir
-iex> error = Errata.to_error(%MyApp.Http.Timeout{url: "https://example.com"})
+iex> error = MyApp.Errors.to_error(%MyApp.Http.Timeout{url: "https://example.com"})
 iex> Errata.http_status(error)
 503
 iex> Errata.retryable?(error)
 true
-iex> Errata.reason(error)
-:timeout
+iex> MyApp.Errors.to_error(:something_unforeseen) |> Errata.http_status()
+500
 ```
 
-Errata implements the protocol for `Any` and nothing else. Every other type —
-including `Atom`, `Tuple` and `BitString` — is deliberately left free, because a
-protocol implementation can only be defined once: any type Errata claimed would
-be a type your application could not claim. If you _do_ want `{:error, reason}`
-tuples unwrapped, that decision is yours to make in a `Tuple` implementation.
+Plain function clauses rather than anything Errata-specific: one function to read
+to see how a system classifies its errors, and two boundaries can classify the
+same value differently when they need to — an admin API and a public API rarely
+want to say the same thing about a changeset.
 
 The fallback controller then loses its hand-written clauses, including the guard:
 
 ```elixir
 def call(conn, {:error, error}) do
-  error = Errata.to_error(error)
+  error = MyApp.Errors.to_error(error)
 
   conn
   |> put_status(Errata.http_status(error))
@@ -121,10 +127,14 @@ def call(conn, {:error, error}) do
 end
 ```
 
-Writing one implementation per foreign type is the same amount of thinking as
-writing one clause per foreign type. What changes is that the classification is
-stated once, next to the type it describes, and that a type you have not gotten
-to yet still arrives as something the boundary can render, log and count.
+### Normalize at the boundary, not before it
+
+`Errata.http_status(:timeout)` raises, and that is worth keeping: inside your
+domain code it means an error escaped unclassified, which is a bug you want to
+hear about. Normalizing turns that noise into a quiet `500`, so call
+`to_error/2` where an error is on its way out of the system — a controller, a
+job runner, a message consumer — rather than in the middle of the code that
+produced it.
 
 ## Stable external error codes
 

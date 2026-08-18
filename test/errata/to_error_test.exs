@@ -1,7 +1,7 @@
 # Fixture modules are defined at the top level rather than inside the test
-# module: a module defined in a test body does not get its protocol impls
-# consolidated, which matters here more than anywhere else in the suite, since
-# `Errata.Convertible` is itself a protocol.
+# module, per the convention in the rest of the suite: a module defined in a test
+# body does not get its protocol impls consolidated, and the JSON assertions
+# below depend on those.
 defmodule ToError.Fallback do
   @moduledoc false
   use Errata.DomainError, default_message: "the application's own catch-all"
@@ -14,32 +14,10 @@ defmodule ToError.Strict do
   use Errata.Error, default_message: "strict", reasons: [:known]
 end
 
-defmodule ToError.Foreign do
-  @moduledoc false
-  defstruct [:detail]
-end
-
-defimpl Errata.Convertible, for: ToError.Foreign do
-  def to_error(%ToError.Foreign{detail: detail}, opts) do
-    ToError.Fallback.new(reason: :converted, context: %{detail: detail, opts: opts})
-  end
-end
-
-defmodule ToError.Faulty do
-  @moduledoc false
-  defstruct []
-end
-
-defimpl Errata.Convertible, for: ToError.Faulty do
-  def to_error(_value, _opts), do: :not_an_error
-end
-
 defmodule Errata.ToErrorTest do
   use ExUnit.Case, async: true
 
   require Errata
-
-  alias Errata.Convertible
 
   doctest Errata.UnknownError
 
@@ -186,32 +164,31 @@ defmodule Errata.ToErrorTest do
     end
   end
 
-  describe "Errata.Convertible implementations" do
-    test "take precedence over the default conversion" do
-      error = Errata.to_error(%ToError.Foreign{detail: "d"})
+  # The documented way to classify the foreign types an application recognizes:
+  # ordinary function clauses, with `Errata.to_error/1` as the base case. This
+  # pins the pattern the boundaries guide teaches.
+  describe "as the base case of an application's own dispatch function" do
+    test "a recognized type gets the application's classification" do
+      error = MyApp.Errors.to_error(%MyApp.Http.Timeout{url: "https://example.com"})
 
-      assert error.__struct__ == ToError.Fallback
-      assert Errata.reason(error) == :converted
-      assert Errata.context(error).detail == "d"
-    end
-
-    test "receive the options passed to to_error/2" do
-      error = Errata.to_error(%ToError.Foreign{detail: "d"}, custom: :opt)
-
-      assert Errata.context(error).opts == [custom: :opt]
-    end
-
-    test "can delegate to the Any implementation for cases they have no opinion on" do
-      error = Convertible.Any.to_error(:timeout, [])
-
-      assert error.__struct__ == Errata.UnknownError
+      assert error.__struct__ == MyApp.Http.RequestFailed
+      assert Errata.http_status(error) == 503
+      assert Errata.retryable?(error) == true
       assert Errata.reason(error) == :timeout
     end
 
-    test "must return an Errata error" do
-      assert_raise ArgumentError, ~r/is not an Errata error/, fn ->
-        Errata.to_error(%ToError.Faulty{})
-      end
+    test "an unrecognized type falls through to the library default" do
+      error = MyApp.Errors.to_error(:whatever)
+
+      assert error.__struct__ == Errata.UnknownError
+      assert Errata.http_status(error) == 500
+      assert Errata.retryable?(error) == false
+    end
+
+    test "an Errata error still passes through unchanged" do
+      error = ToError.Fallback.new(reason: :whatever)
+
+      assert MyApp.Errors.to_error(error) == error
     end
   end
 
