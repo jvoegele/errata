@@ -258,9 +258,10 @@ end
 ```
 
 Errata deliberately ships no retry mechanism of its own. `retryable?/1` is a
-classification your own retry logic (or a library such as
-[`retry`](https://hexdocs.pm/retry)) can branch on without knowing the error's
-specific type:
+classification your own retry logic — or a library such as
+[`ExternalService`](https://hexdocs.pm/external_service), which handles retries
+with backoff, rate limiting and circuit breakers, and which already uses Errata
+for its own errors — can branch on without knowing the error's specific type:
 
 ```elixir
 case do_work() do

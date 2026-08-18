@@ -755,8 +755,10 @@ defmodule Errata do
   decide from the error's `:reason` or `:context`.
 
   Errata deliberately provides no retry mechanism of its own — this is a
-  classification that _your_ retry logic (or a library such as `:retry`) can
-  branch on without knowing the error's specific type:
+  classification that _your_ retry logic, or a library such as
+  [`ExternalService`](https://hexdocs.pm/external_service) (which already uses
+  Errata for its own errors), can branch on without knowing the error's specific
+  type:
 
       case do_work() do
         {:error, error} when Errata.is_error(error) ->
