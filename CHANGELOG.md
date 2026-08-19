@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- The error's classification now travels with it through `Errata.to_map/1`, and therefore through
+  the `Jason.Encoder` / `JSON.Encoder` implementations (#48). The serialized form gains four keys:
+  `kind`, `http_status`, `severity`, and `retryable`.
+
+  Errata's premise is that a boundary can ask any error what status to return, how loudly to log it,
+  and whether retrying is worth attempting. That held only while the error struct was in hand: the
+  moment it was serialized — an API response, a job payload, a message on a queue — the answers were
+  gone, because computing them requires the error's module. Of the five classifications, only `code`
+  crossed the wire. A receiving service had to re-derive the rest from the module name, which the
+  docs correctly tell people not to match on, since it is an implementation detail that moves when
+  the module moves.
+
+  ```json
+  {
+    "error_type": "MyApp.Http.RequestFailed",
+    "reason": "timeout",
+    "kind": "infrastructure",
+    "http_status": 503,
+    "severity": "error",
+    "retryable": true
+  }
+  ```
+
+  The four keys are computed through the same overridable functions as the accessors, so a type that
+  derives its status or retryability from `:reason` serializes what it actually computed rather than
+  a default. A wrapped `:cause` and the members of an aggregate serialize through the same
+  `to_map/1`, so each carries its own classification instead of inheriting the outer error's.
+
+  This is deliberately the *classification* half of #48 and not the deserialization half. Putting
+  the answers on the wire serves a consumer that does not hold the error's module — another service,
+  or a program not written in Elixir — and needs no atom-safety or module-resolution machinery to do
+  it. A `from_map/2` that reconstructs the struct serves the opposite case, where the receiving VM
+  already has the module compiled and could recompute the classification anyway; it remains open,
+  now with the cheaper half no longer blocking on it.
+
+  Additive under SemVer: map patterns are open, so existing matches on `to_map/1` still hold. Only
+  an assertion of exact map equality would need updating.
+
 ## [1.5.0] - 2026-08-18
 
 ### Added

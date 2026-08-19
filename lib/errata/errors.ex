@@ -187,6 +187,14 @@ defmodule Errata.Errors do
       code: error_type.code(error),
       reason: error.reason,
       message: error_type.display_message(error),
+      # The classification travels with the error so that a consumer on the far
+      # side of the wire can act on it without holding the error's module — or
+      # being written in Elixir. `kind` is a fixed field; the rest dispatch
+      # through the overridable functions, so an override is honored here too.
+      kind: error.kind,
+      http_status: error_type.http_status(error),
+      severity: error_type.severity(error),
+      retryable: error_type.retryable?(error),
       cause: cause_map(error.cause),
       env: Errata.Env.to_map(error.env),
       context: context_map(error)

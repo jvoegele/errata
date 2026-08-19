@@ -259,6 +259,82 @@ defmodule Errata.ErrorTest do
     end
   end
 
+  # The classification is what a consumer on the far side of the wire acts on,
+  # so it has to survive serialization: without these keys the receiving end can
+  # read the message but cannot tell a 404 from a 503, or whether to retry.
+  describe "to_map/1 classification" do
+    test "includes the classification keys with their defaults" do
+      map = TestError.to_map(TestError.new())
+
+      assert map.kind == :general
+      assert map.http_status == 500
+      assert map.severity == :error
+      assert map.retryable == false
+    end
+
+    test "reflects the kind the type was defined with" do
+      assert CodedError.to_map(CodedError.new()).kind == :domain
+
+      assert PlainInfrastructureError.to_map(PlainInfrastructureError.new()).kind ==
+               :infrastructure
+    end
+
+    test "reflects declared classification options" do
+      assert StatusOverrideError.to_map(StatusOverrideError.new()).http_status == 404
+      assert SeverityOverrideError.to_map(SeverityOverrideError.new()).severity == :warning
+
+      assert PlainInfrastructureError.to_map(PlainInfrastructureError.new()).retryable == true
+
+      assert NotRetryableInfrastructureError.to_map(NotRetryableInfrastructureError.new()).retryable ==
+               false
+    end
+
+    # These dispatch through the overridable generated functions rather than
+    # reading a field, so a type that computes its classification from :reason
+    # serializes the computed value.
+    test "dispatches through overridden classification functions" do
+      assert DynamicStatusError.to_map(DynamicStatusError.new(reason: :conflict)).http_status ==
+               409
+
+      assert DynamicSeverityError.to_map(DynamicSeverityError.new(reason: :minor)).severity ==
+               :info
+
+      assert DynamicRetryableError.to_map(DynamicRetryableError.new(reason: :not_found)).retryable ==
+               false
+
+      assert DynamicRetryableError.to_map(DynamicRetryableError.new(reason: :timeout)).retryable ==
+               true
+    end
+
+    test "agrees with the Errata accessors" do
+      error = DynamicStatusError.new(reason: :missing)
+      map = Errata.to_map(error)
+
+      assert map.kind == Errata.kind(error)
+      assert map.http_status == Errata.http_status(error)
+      assert map.severity == Errata.severity(error)
+      assert map.retryable == Errata.retryable?(error)
+    end
+
+    test "a wrapped Errata cause carries its own classification" do
+      map = TestError.to_map(TestError.new(cause: PlainInfrastructureError.new()))
+
+      assert map.cause.kind == :infrastructure
+      assert map.cause.http_status == 503
+      assert map.cause.retryable == true
+
+      # ...and does not overwrite the outer error's own classification.
+      assert map.kind == :general
+      assert map.retryable == false
+    end
+
+    test "a non-Errata cause carries none" do
+      map = TestError.to_map(TestError.new(cause: %RuntimeError{message: "boom"}))
+
+      assert map.cause == %{error_type: "RuntimeError", message: "boom"}
+    end
+  end
+
   describe "raising as an exception" do
     test "raise/1 uses default values" do
       error =
@@ -519,6 +595,21 @@ defmodule Errata.ErrorTest do
       assert function ==
                Exception.format_mfa(current_module, current_function, current_function_arity)
     end
+
+    # The point of serializing the classification is that a consumer holding
+    # only the decoded JSON — possibly not even an Elixir program — can route on
+    # it. Atoms arrive as strings; the status stays an integer and retryable a
+    # boolean, so neither needs parsing.
+    test "carries the classification, needing no Errata modules to interpret" do
+      json = Jason.encode!(DynamicStatusError.new(reason: :conflict))
+
+      assert {:ok, decoded} = Jason.decode(json)
+
+      assert decoded["kind"] == "domain"
+      assert decoded["http_status"] == 409
+      assert decoded["severity"] == "error"
+      assert decoded["retryable"] == false
+    end
   end
 
   # The built-in JSON module (and JSON.Encoder protocol) is only available on
@@ -549,6 +640,20 @@ defmodule Errata.ErrorTest do
         assert file =~ ~r/error_test.exs$/
         assert module == inspect(__MODULE__)
         refute module =~ "Elixir."
+      end
+
+      test "carries the classification, identically to the Jason backend" do
+        error = DynamicStatusError.new(reason: :conflict)
+
+        assert JSON.encode!(error) |> JSON.decode!() ==
+                 Jason.encode!(error) |> Jason.decode!()
+
+        decoded = error |> JSON.encode!() |> JSON.decode!()
+
+        assert decoded["kind"] == "domain"
+        assert decoded["http_status"] == 409
+        assert decoded["severity"] == "error"
+        assert decoded["retryable"] == false
       end
     end
   end
