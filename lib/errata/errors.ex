@@ -93,16 +93,165 @@ defmodule Errata.Errors do
 
   # A misspelled or non-Errata `:fallback` would otherwise fail deep inside
   # `struct/2` with an UndefinedFunctionError for `__struct__/1`.
-  defp validate_fallback!(error_type) do
-    if is_atom(error_type) and Code.ensure_loaded?(error_type) and
-         function_exported?(error_type, :__errata_valid_reasons__, 0) do
+  defp validate_fallback!(error_type), do: validate_error_type!(error_type, ":fallback")
+
+  defp errata_error_type?(error_type) do
+    is_atom(error_type) and Code.ensure_loaded?(error_type) and
+      function_exported?(error_type, :__errata_valid_reasons__, 0)
+  end
+
+  defp validate_error_type!(error_type, label) do
+    if errata_error_type?(error_type) do
       :ok
     else
       raise ArgumentError,
-            ":fallback must be an Errata error type (a module that uses Errata.Error, " <>
+            "#{label} must be an Errata error type (a module that uses Errata.Error, " <>
               "Errata.DomainError, or Errata.InfrastructureError), got: #{inspect(error_type)}"
     end
   end
+
+  @doc false
+  @spec from_map(module(), term(), keyword()) :: {:ok, Errata.error()} | {:error, term()}
+  def from_map(error_type, map, opts) do
+    # A bad module is a programming error and raises; bad *data* is the expected
+    # condition at a boundary and comes back as `{:error, _}`.
+    validate_error_type!(error_type, "the error type")
+
+    cond do
+      not is_map(map) ->
+        {:error, {:invalid_map, map}}
+
+      # An aggregate's members each carry their own `error_type` as a string, and
+      # resolving those to modules is precisely the registry that taking the type
+      # as an argument exists to avoid. Refuse rather than silently drop members.
+      aggregate_type?(error_type) ->
+        {:error, {:unsupported, :aggregate}}
+
+      true ->
+        decode(error_type, map, opts)
+    end
+  end
+
+  defp decode(error_type, map, opts) do
+    key_mode = Keyword.get(opts, :keys, :strings)
+
+    with :ok <- validate_key_mode(key_mode),
+         {:ok, reason} <- decode_reason(error_type, field(map, :reason)) do
+      params =
+        [
+          message: field(map, :message),
+          reason: reason,
+          context: decode_context(field(map, :context), key_mode),
+          cause: field(map, :cause)
+        ]
+        # Dropping nils lets the type's own defaults (`:default_message`,
+        # `:default_reason`) apply, rather than pinning the field to nil.
+        |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+      {:ok, create(error_type, params)}
+    end
+  end
+
+  defp validate_key_mode(mode) when mode in [:strings, :existing_atoms], do: :ok
+  defp validate_key_mode(mode), do: {:error, {:invalid_option, {:keys, mode}}}
+
+  # The encoded form may have atom keys (straight from `to_map/1`) or string keys
+  # (having been through JSON); accept either.
+  defp field(map, key) do
+    case Map.fetch(map, key) do
+      {:ok, value} -> value
+      :error -> Map.get(map, Atom.to_string(key))
+    end
+  end
+
+  defp decode_reason(_error_type, nil), do: {:ok, nil}
+
+  defp decode_reason(error_type, value) when is_binary(value) or is_atom(value) do
+    case error_type.__errata_valid_reasons__() do
+      # A declared `:reasons` set makes this a lookup against known atoms, so no
+      # atom is created from external input at all — the safest form of this.
+      valid when is_list(valid) -> declared_reason(valid, value)
+      nil -> existing_reason(value)
+    end
+  end
+
+  defp decode_reason(_error_type, value), do: {:error, {:invalid_reason, value}}
+
+  defp declared_reason(valid, value) do
+    case Enum.find(valid, &(to_string(&1) == to_string(value))) do
+      nil -> {:error, {:unknown_reason, value}}
+      reason -> {:ok, reason}
+    end
+  end
+
+  defp existing_reason(value) when is_atom(value), do: {:ok, value}
+
+  defp existing_reason(value) when is_binary(value) do
+    {:ok, String.to_existing_atom(value)}
+  rescue
+    ArgumentError -> {:error, {:unknown_reason, value}}
+  end
+
+  defp decode_context(nil, _key_mode), do: nil
+
+  # Both modes rewrite keys rather than passing them through, so the decoded
+  # shape depends only on the option — not on whether the caller happened to
+  # hand us JSON-decoded string keys or a map straight from `to_map/1`.
+  defp decode_context(context, key_mode) when is_map(context),
+    do: convert_keys(context, key_mode)
+
+  defp decode_context(context, _key_mode), do: context
+
+  defp convert_keys(%_struct{} = value, _mode), do: value
+
+  defp convert_keys(map, mode) when is_map(map) do
+    Map.new(map, fn {key, value} -> {convert_key(key, mode), convert_keys(value, mode)} end)
+  end
+
+  defp convert_keys(list, mode) when is_list(list), do: Enum.map(list, &convert_keys(&1, mode))
+  defp convert_keys(value, _mode), do: value
+
+  defp convert_key(key, :strings) when is_binary(key), do: key
+  defp convert_key(key, :strings), do: to_string(key)
+
+  # Best-effort by design: a key that has no existing atom stays a string rather
+  # than failing the decode or minting one, so decoding untrusted input cannot
+  # exhaust the atom table.
+  defp convert_key(key, :existing_atoms) when is_binary(key) do
+    String.to_existing_atom(key)
+  rescue
+    ArgumentError -> key
+  end
+
+  defp convert_key(key, :existing_atoms), do: key
+
+  @doc false
+  @spec format_decode_error(module(), term()) :: String.t()
+  def format_decode_error(error_type, reason) do
+    "could not decode #{inspect(error_type)}: " <> decode_error_detail(reason)
+  end
+
+  defp decode_error_detail({:invalid_map, value}),
+    do: "expected a map, got: #{inspect(value)}"
+
+  defp decode_error_detail({:unsupported, :aggregate}),
+    do:
+      "aggregate error types cannot be decoded, because each member's type would " <>
+        "have to be resolved from its name. Decode the members individually with " <>
+        "their own types and rebuild the aggregate with new/1."
+
+  defp decode_error_detail({:unknown_reason, value}),
+    do:
+      "#{inspect(value)} is not a known reason. Declare it in the type's :reasons " <>
+        "option, or check that the sending and receiving versions agree."
+
+  defp decode_error_detail({:invalid_reason, value}),
+    do: "expected the reason to be a string or an atom, got: #{inspect(value)}"
+
+  defp decode_error_detail({:invalid_option, {:keys, mode}}),
+    do: "invalid :keys option #{inspect(mode)}, expected :strings or :existing_atoms"
+
+  defp decode_error_detail(other), do: inspect(other)
 
   # The `:cause` param may be given as a raw value (e.g. via `new(cause: ...)`);
   # normalize it into an `Errata.Cause` struct. A `nil` cause means "no cause".

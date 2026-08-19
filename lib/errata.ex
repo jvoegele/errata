@@ -384,6 +384,10 @@ defmodule Errata do
   here too. See
   [Errors at a boundary](guides/boundaries.md#carrying-the-classification-across-the-wire).
 
+  Most consumers of this map need nothing else — the classification is enough to
+  route, log and retry. An Elixir application that has the error type compiled
+  can turn the map back into an error with `from_map/3`.
+
   Raises an `ArgumentError` if `error` is not an Errata error.
   """
   @spec to_map(error()) :: map()
@@ -391,6 +395,118 @@ defmodule Errata do
 
   def to_map(other) do
     raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
+  Rebuilds an error of the given type from its encoded form.
+
+  This is the counterpart to `to_map/1`, for the receiving end of a boundary: a
+  service that consumes an error another service serialized, a job runner
+  reading a payload, a consumer taking a message off a queue. It accepts the map
+  produced by `to_map/1` directly, or the result of decoding that map's JSON
+  (string keys are handled as well as atom keys).
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> encoded = Errata.to_map(OrderNotFound.new(reason: :not_found))
+      iex> {:ok, error} = Errata.from_map(OrderNotFound, encoded)
+      iex> Errata.reason(error)
+      :not_found
+      iex> Errata.is_domain_error(error)
+      true
+
+  The error type is an argument rather than something read from the encoded
+  `error_type` key. That key holds a module name, which is an implementation
+  detail Errata deliberately does not treat as an identifier — resolving it
+  would mean both trusting a name from the wire and keeping a registry of every
+  error type, which is exactly what the structural `is_error/1` guard avoids.
+
+  ## What comes back, and what does not
+
+  A decoded error is a faithful **classification**, not a faithful
+  reconstruction:
+
+    * `:reason`, `:message` and `:context` are restored.
+    * `:kind`, `http_status/1`, `severity/1` and `retryable?/1` are recomputed
+      from the type in *this* application, and the encoded values are ignored.
+      The receiver's own definitions win, so an error decodes consistently with
+      every locally-created error of the same type even if the sender is running
+      an older version.
+    * `:env` is always `nil`. It describes a location in the sending process,
+      which would be actively misleading attached to an error here.
+    * `:cause` is kept as the plain decoded value rather than being rebuilt into
+      an error, since doing so would need its module too. `Errata.cause/1`
+      returns it; `format_chain/1` still shows it.
+    * Context that was redacted on the way out stays redacted — the original
+      values are not on the wire, and nothing here pretends otherwise.
+
+  ## Options
+
+    * `:keys` — what the keys of the decoded `:context` map should be. Defaults
+      to `:strings`, which is the shape context arrives in from JSON. Pass
+      `:existing_atoms` to convert keys that already exist as atoms, which makes
+      a context built locally round-trip to the same shape:
+
+          iex> alias MyApp.Orders.OrderNotFound
+          iex> encoded = Errata.to_map(OrderNotFound.new(context: %{order_id: 42}))
+          iex> {:ok, error} = Errata.from_map(OrderNotFound, encoded, keys: :existing_atoms)
+          iex> Errata.context(error)
+          %{order_id: 42}
+
+      Conversion is best-effort and recursive: a key with no existing atom is
+      left as a string rather than being created, so decoding untrusted input
+      cannot exhaust the atom table. The default is `:strings` because `:context`
+      holds arbitrary data, and that is where the risk would otherwise live.
+
+      Both modes rewrite the keys, so the decoded shape depends only on this
+      option — not on whether you passed JSON-decoded data or a map straight
+      from `to_map/1`.
+
+  ## Errors
+
+  Returns `{:error, reason}` rather than raising, since malformed input is an
+  expected condition where this is called. Passing something that is not an
+  Errata error type is a programming error and still raises `ArgumentError`.
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> Errata.from_map(OrderNotFound, %{"reason" => "no_such_reason_exists"})
+      {:error, {:unknown_reason, "no_such_reason_exists"}}
+
+  A type that declares `:reasons` is decoded by matching against that declared
+  set, so no atom is created from external input at all. See `from_map!/3` for
+  the raising variant.
+  """
+  @doc since: "1.7.0"
+  @spec from_map(module(), term(), keyword()) :: {:ok, error()} | {:error, term()}
+  def from_map(error_type, map, opts \\ []) do
+    Errata.Errors.from_map(error_type, map, opts)
+  end
+
+  @doc """
+  Same as `from_map/3`, but returns the error directly and raises on failure.
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> encoded = Errata.to_map(OrderNotFound.new(reason: :not_found))
+      iex> Errata.from_map!(OrderNotFound, encoded) |> Errata.reason()
+      :not_found
+
+  Reach for this when the encoded form comes from somewhere you control — your
+  own job queue, a service you deploy alongside this one — and a malformed
+  payload means something is broken rather than something a caller sent wrong.
+  Use `from_map/3` when the input is foreign and a bad payload is one of the
+  outcomes you expect to handle.
+
+  Raises `ArgumentError` on anything `from_map/3` would return `{:error, _}` for.
+  """
+  @doc since: "1.7.0"
+  @spec from_map!(module(), term(), keyword()) :: error()
+  def from_map!(error_type, map, opts \\ []) do
+    case Errata.Errors.from_map(error_type, map, opts) do
+      {:ok, error} ->
+        error
+
+      {:error, reason} ->
+        raise ArgumentError, Errata.Errors.format_decode_error(error_type, reason)
+    end
   end
 
   @doc """
