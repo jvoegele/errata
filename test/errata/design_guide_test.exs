@@ -73,6 +73,47 @@ defmodule ErrataDesignGuideTest.Boundary do
   def handle(_error), do: :normal
 end
 
+# The "When the list gets long" subsection: definition-site tags via a wrapper
+# macro, offered as the alternative to the hand-maintained list above.
+defmodule ErrataDesignGuideTest.TaggedError do
+  @moduledoc false
+
+  defmacro __using__(opts) do
+    {tags, errata_opts} = Keyword.pop(opts, :tags, [])
+    {base, errata_opts} = Keyword.pop(errata_opts, :base, Errata.DomainError)
+
+    quote do
+      use unquote(base), unquote(errata_opts)
+
+      def __tags__, do: unquote(tags)
+    end
+  end
+
+  def tags(%mod{}) do
+    if declares_tags?(mod), do: mod.__tags__(), else: []
+  end
+
+  def tagged?(error, tag), do: tag in tags(error)
+
+  defp declares_tags?(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :__tags__, 0)
+  end
+end
+
+defmodule ErrataDesignGuideTest.TaggedGatewayUnavailable do
+  @moduledoc false
+  use ErrataDesignGuideTest.TaggedError,
+    base: Errata.InfrastructureError,
+    tags: [:payments, :external],
+    default_message: "the payment gateway is unavailable",
+    code: "GATEWAY_UNAVAILABLE"
+end
+
+defmodule ErrataDesignGuideTest.UntaggedDomain do
+  @moduledoc false
+  use Errata.DomainError
+end
+
 defmodule ErrataDesignGuideTest do
   use ExUnit.Case, async: true
 
@@ -134,6 +175,40 @@ defmodule ErrataDesignGuideTest do
       assert Boundary.handle(ErrataDesignGuideTest.CarrierTimeout.new()) == :open_circuit
       assert Boundary.handle(Domain.new()) == :normal
       assert Boundary.handle(%RuntimeError{}) == :normal
+    end
+
+    test "definition-site tags are readable off any error" do
+      alias ErrataDesignGuideTest.TaggedError
+      alias ErrataDesignGuideTest.TaggedGatewayUnavailable
+
+      error = TaggedGatewayUnavailable.new()
+
+      assert TaggedError.tags(error) == [:payments, :external]
+      assert TaggedError.tagged?(error, :external)
+      refute TaggedError.tagged?(error, :shipping)
+    end
+
+    test "a type that declares no tags reports none rather than raising" do
+      alias ErrataDesignGuideTest.TaggedError
+
+      assert TaggedError.tags(ErrataDesignGuideTest.UntaggedDomain.new()) == []
+      refute TaggedError.tagged?(ErrataDesignGuideTest.UntaggedDomain.new(), :external)
+    end
+
+    # The guide claims a tagged type is an ordinary Errata error "in every other
+    # respect"; this is what that claim means concretely.
+    test "a tagged type is unaffected as an Errata error" do
+      alias ErrataDesignGuideTest.TaggedGatewayUnavailable
+
+      error = TaggedGatewayUnavailable.new(reason: :down)
+
+      assert Errata.is_error(error)
+      assert Errata.is_infrastructure_error(error)
+      assert Errata.kind(error) == :infrastructure
+      assert Errata.http_status(error) == 503
+      assert Errata.code(error) == "GATEWAY_UNAVAILABLE"
+      assert Errata.retryable?(error)
+      assert Errata.to_map(error).code == "GATEWAY_UNAVAILABLE"
     end
   end
 

@@ -138,6 +138,77 @@ The same technique works for any classification an application wants — by
 subsystem, by team, by alerting policy — without the taxonomy having to
 anticipate it.
 
+### Classifying without a hand-maintained list
+
+The guard above has one weakness, and it shows up sooner than you might expect:
+the set lives away from the error definitions, so **nothing catches a new error
+type that should have been added to it**. Adding
+`MyApp.Inventory.ReservationFailed` and forgetting to list it produces no
+warning, no test failure, and no type error — just a boundary that quietly
+treats it as one of your own outages.
+
+If that matters more than guard support, declare the classification where the
+type is declared, by wrapping `use` in a macro of your own:
+
+```elixir
+defmodule MyApp.TaggedError do
+  defmacro __using__(opts) do
+    {tags, errata_opts} = Keyword.pop(opts, :tags, [])
+    {base, errata_opts} = Keyword.pop(errata_opts, :base, Errata.DomainError)
+
+    quote do
+      use unquote(base), unquote(errata_opts)
+
+      def __tags__, do: unquote(tags)
+    end
+  end
+
+  def tags(%mod{}) do
+    if declares_tags?(mod), do: mod.__tags__(), else: []
+  end
+
+  def tagged?(error, tag), do: tag in tags(error)
+
+  # `function_exported?/3` answers only for *loaded* modules, so without the
+  # `ensure_loaded?` this silently reports `[]` for a type nothing has
+  # referenced yet.
+  defp declares_tags?(module) do
+    Code.ensure_loaded?(module) and function_exported?(module, :__tags__, 0)
+  end
+end
+```
+
+The classification now sits next to the definition, where it cannot drift out of
+step with it:
+
+```elixir
+defmodule MyApp.Payments.GatewayUnavailable do
+  use MyApp.TaggedError,
+    base: Errata.InfrastructureError,
+    tags: [:payments, :external],
+    default_message: "the payment gateway is unavailable",
+    code: "GATEWAY_UNAVAILABLE"
+end
+```
+
+A tagged type is an ordinary Errata error in every other respect — the guards,
+`http_status/1`, `code/1`, `retryable?/1` and the JSON encoding are untouched.
+
+The trade is real and worth stating plainly: **`tagged?/2` is a function call,
+not a guard**, so it cannot appear in a function head the way `is_external_error/1`
+can. Tags read well in a `case` or an `if`; a guard reads better in a
+multi-clause boundary. Pick by which of the two costs you would rather pay — a
+list that can go stale, or a classification you cannot pattern match on.
+
+> #### Neither of these is in the library {: .info}
+>
+> Both are application code, deliberately. Errata's `:kind` is a closed set of
+> three so that `is_error/1` can stay a real structural guard, and a second
+> library-level classification mechanism would have to widen every error struct
+> to offer guard support. See
+> [issue #50](https://github.com/jvoegele/errata/issues/50) for the full
+> reasoning and the measurements behind it.
+
 ### Ignoring the taxonomy
 
 The taxonomy is a convenience, not a requirement. If the domain/infrastructure
