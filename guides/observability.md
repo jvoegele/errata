@@ -6,7 +6,7 @@ composable functions for this, and — deliberately — no integration with any
 particular external service.
 
 `Errata.log/2` logs an error's developer message, attaching its `reason`, `kind`,
-`code`, `severity`, `retryable`, `context`, and origin `env` as **Logger metadata**
+`code`, `severity`, `retryable`, `http_status`, `context`, and origin `env` as **Logger metadata**
 rather than flattening them into the message string, so they stay queryable in
 structured logging backends. With no level given it logs at the error's own severity, which
 is `:error` unless the type sets one:
@@ -30,9 +30,9 @@ Errata.report(error, metadata: %{request_id: request_id}, log: :warning)
 The event is `[:errata, :error]`, with measurements `%{system_time: _, count: 1}`
 (so [`Telemetry.Metrics`](https://hexdocs.pm/telemetry_metrics) counters work out
 of the box) and metadata carrying the full `:error` struct plus `:kind`,
-`:reason`, `:error_type`, `:code`, `:severity`, `:retryable`, and `:context` as
-top-level keys — simple values that work directly as metric tags. A handler in
-your application wires it up:
+`:reason`, `:error_type`, `:code`, `:severity`, `:retryable`, `:http_status`,
+and `:context` as top-level keys — simple values that work directly as metric
+tags. A handler in your application wires it up:
 
 ```elixir
 :telemetry.attach("myapp-errata", [:errata, :error], &MyApp.ErrorReporter.handle/4, nil)

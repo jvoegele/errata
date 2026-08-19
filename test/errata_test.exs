@@ -42,6 +42,10 @@ defmodule ErrataTest do
     use Errata.DomainError, code: "PAYMENT_DECLINED"
   end
 
+  defmodule TestStatusOverrideError do
+    use Errata.DomainError, http_status: 404
+  end
+
   defmodule NonErrataError do
     defexception [:message, :reason, :context, :env]
   end
@@ -480,6 +484,7 @@ defmodule ErrataTest do
       assert metadata.code == nil
       assert metadata.severity == :error
       assert metadata.retryable == false
+      assert metadata.http_status == 422
     end
 
     test "includes the error's code in the metadata" do
@@ -497,6 +502,29 @@ defmodule ErrataTest do
       Errata.report(TestInfrastructureError.new(reason: :timeout))
       assert_received {:telemetry_event, _event, _measurements, metadata}
       assert metadata.retryable == true
+    end
+
+    # The classification a boundary branches on and the classification a handler
+    # tags on are the same set, so a handler can build a 5xx-rate metric without
+    # re-deriving the status from `kind`.
+    test "includes the error's http_status in the metadata" do
+      Errata.report(TestDomainError.new(reason: :boom))
+      assert_received {:telemetry_event, _event, _measurements, metadata}
+      assert metadata.http_status == 422
+
+      Errata.report(TestInfrastructureError.new(reason: :timeout))
+      assert_received {:telemetry_event, _event, _measurements, metadata}
+      assert metadata.http_status == 503
+
+      Errata.report(TestGeneralError.new())
+      assert_received {:telemetry_event, _event, _measurements, metadata}
+      assert metadata.http_status == 500
+    end
+
+    test "reflects an overridden http_status in the metadata" do
+      Errata.report(TestStatusOverrideError.new())
+      assert_received {:telemetry_event, _event, _measurements, metadata}
+      assert metadata.http_status == 404
     end
 
     test "merges caller metadata under the protected standard keys" do
@@ -578,6 +606,7 @@ defmodule ErrataTest do
       assert event.meta.severity == :error
       assert event.meta.retryable == false
       assert event.meta.code == nil
+      assert event.meta.http_status == 422
       assert %{module: ErrataTest, file: _, line: _} = event.meta.env
     end
 
@@ -585,6 +614,16 @@ defmodule ErrataTest do
       capture_log(fn -> Errata.log(TestCodedError.new(reason: :boom)) end)
       assert_received {:log_event, event}
       assert event.meta.code == "PAYMENT_DECLINED"
+    end
+
+    test "includes the error's http_status in the Logger metadata" do
+      capture_log(fn -> Errata.log(TestInfrastructureError.new(reason: :timeout)) end)
+      assert_received {:log_event, event}
+      assert event.meta.http_status == 503
+
+      capture_log(fn -> Errata.log(TestStatusOverrideError.new()) end)
+      assert_received {:log_event, event}
+      assert event.meta.http_status == 404
     end
 
     test "defaults to the error's severity, which is :error unless set" do

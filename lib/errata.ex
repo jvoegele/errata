@@ -971,6 +971,7 @@ defmodule Errata do
     * `:code` — the error's stable external code, or `nil` (see `code/1`)
     * `:severity` — the error's severity (see `severity/1`)
     * `:retryable` — whether the error is retryable (see `retryable?/1`)
+    * `:http_status` — the error's HTTP status (see `http_status/1`)
     * `:context` — the error's context map
     * `:env` — a map of the origin `module`, `function`, `file`, and `line`
 
@@ -1001,8 +1002,9 @@ defmodule Errata do
     * measurements `%{system_time: integer(), count: 1}` — `:count` is always `1`,
       so `Telemetry.Metrics.counter/2` works out of the box
     * metadata containing the full `:error` struct plus `:kind`, `:reason`,
-      `:error_type`, `:code`, `:severity`, `:retryable`, and `:context` as
-      top-level keys (simple values suitable for use as metric tags)
+      `:error_type`, `:code`, `:severity`, `:retryable`, `:http_status`, and
+      `:context` as top-level keys (simple values suitable for use as metric
+      tags)
 
   Options:
 
@@ -1066,6 +1068,7 @@ defmodule Errata do
       code: code(error),
       severity: severity(error),
       retryable: retryable?(error),
+      http_status: http_status(error),
       context: context
     }
   end
@@ -1089,6 +1092,7 @@ defmodule Errata do
       code: code(error),
       severity: severity(error),
       retryable: retryable?(error),
+      http_status: http_status(error),
       context: Errata.Errors.redacted_context(error),
       env: env_metadata(error.env)
     ]

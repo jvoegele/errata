@@ -50,6 +50,26 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
   This completes #48, whose classification half shipped in 1.6.0.
 
+### Changed
+- `Errata.log/2` and `Errata.report/2` now include `:http_status` in their metadata, alongside the
+  `:kind`, `:reason`, `:error_type`, `:code`, `:severity` and `:retryable` keys that were already
+  there. A telemetry handler can now tag on the same classification a boundary branches on — a
+  5xx-rate metric, for instance — without re-deriving the status from `:kind`.
+
+  1.6.0 put all five classifications in `to_map/1` but left the metadata with four, and that
+  asymmetry was documented as deliberate on the grounds that a log line and a telemetry event are
+  not HTTP responses. That reasoning is still true as far as it goes, but it did not survive the
+  comparison: `:retryable` is derived from `:kind` in exactly the same way and has always been in
+  the metadata, so "derived, and only meaningful in some contexts" was never the line being drawn.
+  What was left was an omission that had to be explained everywhere the key list appears, which
+  costs more over time than a key some handlers ignore.
+
+  Additive: metadata is a map (telemetry) and a keyword list (Logger), so existing handlers and
+  formatters are unaffected unless they assert on the exact key set. Types that compute
+  `http_status/1` from `:reason` or `:context` have that computed value in the metadata, since this
+  dispatches through the same overridable function as `code/1`, `severity/1` and `retryable?/1`
+  already do.
+
 ## [1.6.0] - 2026-08-19
 
 ### Added

@@ -340,8 +340,8 @@ Two things worth being clear about:
     below.
 
 `Errata.log/2` and `Errata.report/2` attach the same classification as metadata,
-minus `http_status` — a log line and a telemetry event are not HTTP responses —
-see [Reporting errors](observability.md).
+so a telemetry handler can route and tag on exactly what a boundary branches on
+— see [Reporting errors](observability.md).
 
 ## Rebuilding an error from its encoded form
 
