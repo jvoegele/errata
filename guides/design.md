@@ -138,6 +138,16 @@ The same technique works for any classification an application wants — by
 subsystem, by team, by alerting policy — without the taxonomy having to
 anticipate it.
 
+Know its one weakness before relying on it: the set lives away from the error
+definitions, so **nothing catches a type that should have been added to it**.
+Define a new error for a third-party call, forget to list it, and there is no
+warning, no failing test, and no type error — just a boundary that quietly
+treats it as one of your own. The gap does not need a large catalogue to appear;
+it is easy to miss a type in a set of a dozen. If the classification drives
+anything you would not want silently wrong — a circuit breaker, a pager — it is
+worth a test that pins the set, or a habit of revisiting the list whenever an
+error type is added.
+
 ### Ignoring the taxonomy
 
 The taxonomy is a convenience, not a requirement. If the domain/infrastructure
