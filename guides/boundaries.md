@@ -332,14 +332,82 @@ Two things worth being clear about:
     what to *do*; it does not identify the error. `error_type` is a module name
     and moves when you move the module — see
     [stable external error codes](#stable-external-error-codes) above.
-  * **This is classification, not reconstruction.** The decoded map is a plain
-    map: Errata has no `from_map/2`, so the receiving side gets everything it
-    needs to route, log and retry, but not the original struct back. That is
-    enough for a boundary, which is what these keys exist for.
+  * **A consumer needs nothing from Errata to use this.** The four keys are
+    plain JSON values, which is the point: the far side can be another language,
+    or a service that has never heard of this library. If the receiving side
+    *is* an Elixir application that has the error type compiled, it can go
+    further — see [rebuilding an error](#rebuilding-an-error-from-its-encoded-form)
+    below.
 
 `Errata.log/2` and `Errata.report/2` attach the same classification as metadata,
 minus `http_status` — a log line and a telemetry event are not HTTP responses —
 see [Reporting errors](observability.md).
+
+## Rebuilding an error from its encoded form
+
+Everything above works from the encoded map alone. When the receiving side is an
+Elixir application that already has the error type compiled — a service you
+deploy alongside this one, a job runner, a consumer of your own queue — it can
+turn the map back into an error with `Errata.from_map/3`, and get pattern
+matching and the guards back with it:
+
+```elixir
+iex> alias MyApp.Orders.OrderNotFound
+iex> encoded = OrderNotFound.new(reason: :not_found) |> Jason.encode!() |> Jason.decode!()
+iex> {:ok, error} = Errata.from_map(OrderNotFound, encoded)
+iex> match?(%OrderNotFound{}, error)
+true
+iex> Errata.http_status(error)
+422
+```
+
+The type is an argument rather than something read from the encoded
+`error_type`. Resolving a module from a name off the wire would mean trusting
+that name *and* keeping a registry of every error type — the central registry
+the structural `is_error/1` guard exists to avoid. Passing the type keeps the
+decision at the call site, where you already know what you asked for.
+
+Use `from_map!/3` when a malformed payload means something is broken rather than
+something a caller sent wrong; it returns the error directly and raises
+otherwise.
+
+### What a decoded error is, and is not
+
+It is a faithful **classification**, not a faithful reconstruction:
+
+  * `:kind`, `http_status/1`, `severity/1` and `retryable?/1` are recomputed from
+    the type *here*, and the encoded values are ignored. The receiver's own
+    definitions win, so a decoded error behaves identically to a locally-created
+    one even when the sender is running an older version of the type.
+  * `:env` is always `nil` — it described a location in the sending process.
+  * `:cause` is kept as the decoded value rather than rebuilt into an error,
+    since that would need its module too.
+  * Context redacted on the way out stays redacted. The original values were
+    never on the wire.
+
+Two limits worth knowing before you reach for it. **Aggregate types are
+refused** — each member carries its type only as a name, so rebuilding them
+needs exactly the registry above; decode members individually and rebuild the
+aggregate with `new/1`. And **context keys come back as strings** by default,
+since context is arbitrary data and converting it is where an atom-exhaustion
+risk would live; pass `keys: :existing_atoms` to convert the ones that already
+exist.
+
+A type that declares `:reasons` decodes its reason by matching against that
+declared set, so nothing from the wire ever reaches `String.to_existing_atom/1`.
+That makes `:reasons` worth declaring on any type you expect to cross a
+boundary:
+
+```elixir
+iex> defmodule MyApp.Orders.PaymentRejected do
+...>   use Errata.DomainError, reasons: [:declined, :expired]
+...> end
+iex> Errata.from_map(MyApp.Orders.PaymentRejected, %{"reason" => "timeout"})
+{:error, {:unknown_reason, "timeout"}}
+```
+
+`:timeout` is a perfectly ordinary atom in any running system; it is refused
+here because it is not one of *this type's* reasons.
 
 ## Rendering an error for users
 

@@ -4,6 +4,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `Errata.from_map/3` and `Errata.from_map!/3` (#48), the counterpart to `to_map/1`: an Elixir
+  application that has an error type compiled can rebuild an error of that type from its encoded
+  form, and get concrete-struct pattern matching and the guards back with it.
+
+  ```elixir
+  {:ok, error} = Errata.from_map(MyApp.Orders.OrderNotFound, decoded_json)
+  match?(%MyApp.Orders.OrderNotFound{}, error)  #=> true
+  ```
+
+  Accepts the map from `to_map/1` directly or the result of decoding its JSON — string and atom
+  keys both work. `from_map/3` returns `{:ok, error} | {:error, reason}`, since malformed input is
+  an expected condition where this gets called; `from_map!/3` returns the error and raises, for
+  payloads from somewhere you control. Passing a module that is not an Errata error type is a
+  programming error and raises in both.
+
+  **The type is an argument, not read from the encoded `error_type`.** Resolving a module from a
+  name off the wire would mean trusting that name *and* keeping a registry of every error type —
+  the central registry that Errata's structural `is_error/1` guard exists to avoid. This is the
+  same reasoning that kept `to_error/2`'s fallback out of application config in 1.5.0.
+
+  **Atom safety comes from `:reasons` rather than from `String.to_existing_atom/1`.** A type that
+  declares its reasons is decoded by matching the incoming value against that declared set, so
+  nothing from the wire reaches `to_existing_atom/1` at all — and a reason whose atom exists but is
+  not declared for *this* type is refused, which the `to_existing_atom` approach would accept and
+  then fail on at construction. Types without declared reasons fall back to `to_existing_atom/1`,
+  which is why declaring `:reasons` is now worth doing on anything that crosses a boundary.
+
+  A decoded error is a faithful *classification*, not a faithful reconstruction, and the docs say
+  so plainly: `:kind`, `http_status/1`, `severity/1` and `retryable?/1` are recomputed from the type
+  in the receiving application and the encoded values are ignored, so the receiver's own definitions
+  win even when the sender runs an older version; `:env` is always `nil`, since it described a
+  location in the sending process; `:cause` is kept as the decoded value rather than rebuilt; and
+  context redacted on the way out stays redacted.
+
+  Two deliberate limits. **Aggregate types are refused** rather than silently losing their members,
+  because each member carries its type only as a name — decode members individually and rebuild
+  with `new/1`. And **context keys come back as strings** by default, because `:context` holds
+  arbitrary data and converting it is where an atom-exhaustion risk would live; `keys:
+  :existing_atoms` converts the keys that already exist, recursively and best-effort, leaving
+  unknown ones as strings.
+
+  This completes #48, whose classification half shipped in 1.6.0.
+
 ## [1.6.0] - 2026-08-19
 
 ### Added

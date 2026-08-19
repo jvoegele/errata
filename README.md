@@ -276,8 +276,9 @@ travels, converted where it leaves, reported:
     and aggregate errors that carry several errors at once.
   * **[Errors at a boundary](guides/boundaries.md)** — HTTP status codes, stable
     external codes, severity and retryability, normalizing errors your
-    application did not define (and when that differs from wrapping), and
-    rendering an error for a user.
+    application did not define (and when that differs from wrapping), carrying
+    an error's classification across the wire and rebuilding it on the far side,
+    and rendering an error for a user.
   * **[Reporting errors](guides/observability.md)** — `Errata.log/2`,
     `Errata.report/2`, the telemetry contract, and redacting sensitive context.
   * **[Design notes](guides/design.md)** — choosing a kind, choosing between an
