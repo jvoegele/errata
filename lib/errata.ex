@@ -367,6 +367,23 @@ defmodule Errata do
       iex> map.context
       %{order_id: 42}
 
+  The map contains `:error_type`, `:code`, `:reason`, `:message` (the
+  `display_message/1` rendering), `:cause`, `:env`, `:context`, and — for an
+  aggregate type — `:errors`.
+
+  It also carries the error's classification, so that code holding only the
+  serialized form can decide what to do with it:
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> map = Errata.to_map(OrderNotFound.new(reason: :not_found))
+      iex> {map.kind, map.http_status, map.severity, map.retryable}
+      {:domain, 422, :error, false}
+
+  These four are computed through the same overridable functions as `kind/1`,
+  `http_status/1`, `severity/1` and `retryable?/1`, so an override is reflected
+  here too. See
+  [Errors at a boundary](guides/boundaries.md#carrying-the-classification-across-the-wire).
+
   Raises an `ArgumentError` if `error` is not an Errata error.
   """
   @spec to_map(error()) :: map()

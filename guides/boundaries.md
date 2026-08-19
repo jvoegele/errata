@@ -273,6 +273,74 @@ case do_work() do
 end
 ```
 
+## Carrying the classification across the wire
+
+Everything above works wherever the error struct is in hand. Once an error is
+serialized — an API response, a job payload, a message on a queue — the receiving
+side has a plain map, and the module that knows how to classify it may live in
+another service, or in a program that isn't written in Elixir at all.
+
+So `Errata.to_map/1`, and therefore the JSON encoding, carries the classification
+along with the error:
+
+```elixir
+iex> alias MyApp.Http.RequestFailed
+iex> map = Errata.to_map(RequestFailed.new(reason: :timeout))
+iex> {map.kind, map.http_status, map.severity, map.retryable}
+{:infrastructure, 503, :error, true}
+```
+
+These four keys are computed through the same overridable functions as the
+accessors, so a type that derives its status or retryability from `:reason` is
+serialized with the value it actually computed, not a default:
+
+```elixir
+iex> defmodule MyApp.Upstream.CallFailed do
+...>   use Errata.InfrastructureError
+...>   def http_status(%{reason: :timeout}), do: 504
+...>   def http_status(_error), do: 503
+...> end
+iex> Errata.to_map(MyApp.Upstream.CallFailed.new(reason: :timeout)).http_status
+504
+```
+
+In JSON the atoms arrive as strings while `http_status` stays an integer and
+`retryable` a boolean, so a consumer can branch on them without parsing
+anything:
+
+```json
+{
+  "error_type": "MyApp.Http.RequestFailed",
+  "code": null,
+  "reason": "timeout",
+  "message": "the request to an upstream service failed",
+  "kind": "infrastructure",
+  "http_status": 503,
+  "severity": "error",
+  "retryable": true
+}
+```
+
+A wrapped `cause` and the members of an aggregate serialize through the same
+`to_map/1`, so each carries its own classification rather than inheriting the
+outer error's — a `422` validation failure wrapping a `503` upstream error
+reports both.
+
+Two things worth being clear about:
+
+  * **Match on `code`, not `error_type`.** The classification tells a consumer
+    what to *do*; it does not identify the error. `error_type` is a module name
+    and moves when you move the module — see
+    [stable external error codes](#stable-external-error-codes) above.
+  * **This is classification, not reconstruction.** The decoded map is a plain
+    map: Errata has no `from_map/2`, so the receiving side gets everything it
+    needs to route, log and retry, but not the original struct back. That is
+    enough for a boundary, which is what these keys exist for.
+
+`Errata.log/2` and `Errata.report/2` attach the same classification as metadata,
+minus `http_status` — a log line and a telemetry event are not HTTP responses —
+see [Reporting errors](observability.md).
+
 ## Rendering an error for users
 
 `Exception.message/1` (and the `String.Chars` implementation) return a
