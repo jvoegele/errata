@@ -67,9 +67,19 @@ defmodule Errata.Env do
 
   @doc """
   Converts the given `Errata.Env` struct to a plain, JSON-encodable map.
+
+  The `:file` in the struct is the absolute path on the machine that compiled the
+  code. When `source_root` is given, the emitted `:file` and `:file_line` are made
+  relative to it, so a serialized error carries `lib/my_app/orders.ex:29` rather
+  than the build tree's layout. A path that does not live under `source_root` is
+  emitted unchanged.
   """
-  @spec to_map(Errata.Env.t()) :: Errata.Env.env_map()
-  def to_map(%__MODULE__{module: module, file: file, line: line} = env) do
+  @spec to_map(Errata.Env.t() | nil, Path.t() | nil) :: Errata.Env.env_map() | %{}
+  def to_map(env, source_root \\ nil)
+
+  def to_map(%__MODULE__{module: module, file: file, line: line} = env, source_root) do
+    file = relative_to_source_root(file, source_root)
+
     %{
       # Use `inspect/1` so module names serialize as "MyApp.Foo" rather than
       # the raw atom form "Elixir.MyApp.Foo".
@@ -82,7 +92,15 @@ defmodule Errata.Env do
     }
   end
 
-  def to_map(_), do: %{}
+  def to_map(_, _), do: %{}
+
+  defp relative_to_source_root(file, nil), do: file
+  defp relative_to_source_root(nil, _source_root), do: nil
+
+  defp relative_to_source_root(file, source_root) when is_binary(file),
+    do: Path.relative_to(file, source_root)
+
+  defp relative_to_source_root(file, _source_root), do: file
 
   defp format_mfa(%{module: module, function: {function, arity}}),
     do: Exception.format_mfa(module, function, arity)

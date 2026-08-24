@@ -389,11 +389,37 @@ defmodule Errata do
   can turn the map back into an error with `from_map/3`.
 
   Raises an `ArgumentError` if `error` is not an Errata error.
-  """
-  @spec to_map(error()) :: map()
-  def to_map(error) when is_error(error), do: Errata.Errors.to_map(error)
 
-  def to_map(other) do
+  ## Projecting the map
+
+  `to_map/1` is the full record, aimed at an error reporter that wants everything.
+  A response body crossing a boundary to a client wants much less — in particular
+  it should not carry `:env`, which names a source file and line. Pass `:only` or
+  `:except` (not both) to select:
+
+      Errata.to_map(error, except: [:env])
+      Errata.to_map(error, only: [:code, :message, :retryable])
+
+  The projection reaches aggregate members and a wrapped Errata cause as well, so
+  `except: [:env]` removes every `:env` in the structure rather than only the
+  outermost one. A cause that is a plain exception rather than an Errata error is
+  left alone.
+
+  Keys are validated: a misspelled one raises rather than silently selecting
+  nothing. See
+  [Errors at a boundary](guides/boundaries.md) for which projection belongs on
+  the wire and which belongs in your reporter.
+  """
+  @spec to_map(error(), keyword()) :: map()
+  def to_map(error, opts \\ [])
+
+  def to_map(error, opts) when is_error(error) do
+    error
+    |> Errata.Errors.to_map()
+    |> Errata.Errors.project(opts)
+  end
+
+  def to_map(other, _opts) do
     raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
   end
 
