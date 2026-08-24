@@ -263,6 +263,9 @@ defmodule ErrataTest do
     end
   end
 
+  # `root_cause/1` is deprecated, so these emit deprecation warnings on a clean
+  # build. That is expected: a deprecated function still has to work, and these
+  # are what prove it until it is removed in 2.0.
   describe "cause/1 and root_cause/1" do
     require MyApp.Orders.OrderNotFound, as: OrderNotFound
     require MyApp.Orders.PaymentDeclined, as: PaymentDeclined

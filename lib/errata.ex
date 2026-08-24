@@ -669,50 +669,39 @@ defmodule Errata do
   @doc """
   Walks the cause chain of `error` and returns the deepest thing in it.
 
-  An error's chain always includes the error itself, so this always returns
-  something: for an error with no cause, the deepest thing in the chain *is* that
-  error. Use `cause/1` to ask whether an error has a cause at all.
-
-  When a wrapped cause is itself an Errata error carrying its own cause, the
-  chain is followed to the bottom.
-
-  **This is the diagnostic accessor**, for logs, tests, and answering "what
-  actually failed". What comes back may be an Errata error or a foreign value —
-  a bare atom, an `{:error, reason}` tuple, a standard exception — so a caller
-  that intends to *act* on it has to work out which it got. When you mean to
-  render, report or classify, reach for `root_error/1` instead, which always
-  returns an Errata error. For a log, `format_chain/1` is usually better than
-  either: it shows the whole chain, including the cause's stacktrace, which no
-  accessor exposes.
-
-      iex> alias MyApp.Orders.{OrderNotFound, PaymentDeclined}
-      iex> require OrderNotFound
-      iex> require PaymentDeclined
-      iex> root = %RuntimeError{message: "db down"}
-      iex> inner = OrderNotFound.wrap(root, reason: :lookup_failed)
-      iex> outer = PaymentDeclined.wrap(inner, reason: :declined)
-      iex> Errata.root_cause(outer)
-      %RuntimeError{message: "db down"}
-
-  An error with no cause is its own root:
-
-      iex> alias MyApp.Orders.OrderNotFound
-      iex> error = OrderNotFound.new(reason: :not_found)
-      iex> Errata.root_cause(error) == error
-      true
+  > #### Deprecated {: .warning}
+  >
+  > A cause chain is a chain of Errata errors, the deepest of which may carry a
+  > *foreign original* — the exception or value your code actually caught. This
+  > function is the one accessor that does not fit that model: it returns an
+  > Errata error or a foreign value depending on how the chain ends, so a caller
+  > has to work out which it got.
+  >
+  >   * `root_error/1` gives you the deepest error, which always has a `code`, a
+  >     `context`, a classification and a `display_message/1`.
+  >   * `cause/1` on that error gives you the foreign original, or `nil` when
+  >     there is none.
+  >   * `format_chain/1` renders the whole chain, stacktraces included, for a log.
+  >
+  > `root_cause(error)` is equivalent to `cause(root_error(error)) || root_error(error)`.
 
   Raises an `ArgumentError` if `error` is not an Errata error.
   """
+  @deprecated "Use root_error/1, or cause/1 on it to reach the foreign original"
   @spec root_cause(error()) :: term()
-  def root_cause(error) when is_error(error) do
-    case cause(error) do
-      nil -> error
-      value -> if is_error(value), do: root_cause(value), else: value
-    end
-  end
+  def root_cause(error) when is_error(error), do: deepest_value(error)
 
   def root_cause(other) do
     raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  # The traversal behind `root_cause/1`, kept private so that the library's own
+  # callers do not trip its deprecation warning.
+  defp deepest_value(error) do
+    case cause(error) do
+      nil -> error
+      value -> if is_error(value), do: deepest_value(value), else: value
+    end
   end
 
   @doc """
@@ -729,10 +718,10 @@ defmodule Errata do
       iex> alias MyApp.Http.RetriesExhausted
       iex> require Errata
       iex> error = Errata.wrap(RetriesExhausted, :econnrefused)
-      iex> Errata.root_cause(error)
-      :econnrefused
       iex> Errata.root_error(error) == error
       true
+      iex> Errata.root_error(error) |> Errata.cause()
+      :econnrefused
 
   When the chain ends in an Errata error, they are the same value.
 
@@ -1205,7 +1194,7 @@ defmodule Errata do
   defp caused_by_metadata(%{cause: nil}), do: nil
 
   defp caused_by_metadata(error) do
-    case root_cause(error) do
+    case deepest_value(error) do
       ^error -> nil
       value -> format_cause_value(value)
     end
