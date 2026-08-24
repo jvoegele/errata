@@ -48,7 +48,8 @@ end
 defmodule MyApp.Http.RetriesExhausted do
   @moduledoc false
   use Errata.InfrastructureError,
-    default_message: "the request could not be completed after 3 attempts"
+    default_message: "the request could not be completed after 3 attempts",
+    code: "RETRIES_EXHAUSTED"
 end
 
 defmodule MyApp.Errors do
@@ -80,4 +81,18 @@ defmodule MyApp.Orders.ValidationFailed do
     aggregate: true,
     default_message: "the order could not be validated",
     code: "VALIDATION_FAILED"
+end
+
+# Backs the "A consumer that only reads errors" example in
+# `guides/wrapping-errors.md`. Verbatim: the guide's doctests call it directly,
+# so the example cannot drift from what is documented.
+defmodule MyAppWeb.ErrorHelpers do
+  @moduledoc false
+
+  def user_message(value) do
+    value
+    |> Errata.to_error()
+    |> Errata.root_error()
+    |> Errata.display_message()
+  end
 end

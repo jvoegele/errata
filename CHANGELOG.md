@@ -35,6 +35,42 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   `guides/boundaries.md` now says so under a warning admonition, and shows selecting fields
   explicitly instead.
 
+- `Errata.root_error/1`, the deepest **Errata error** in a cause chain.
+
+  A cause chain is Errata errors all the way down, ending in at most one foreign value — a bare
+  atom, an `{:error, reason}` tuple, a standard exception. `cause/1` only accepts Errata errors, so
+  a foreign value can only ever be at the bottom. And that bottom value is frequently the least
+  useful thing in the chain: `:econnrefused` has no message, no context, no code and no
+  classification, while the error wrapping it has all four.
+
+  ```elixir
+  error = Errata.wrap(RetriesExhausted, :econnrefused, reason: :timeout)
+
+  Errata.root_cause(error)                    #=> :econnrefused
+  Errata.root_error(error) |> Errata.code()   #=> "RETRIES_EXHAUSTED"
+  ```
+
+  The two differ **exactly** when the chain bottoms out in a foreign value, and are the same value
+  otherwise. Which to reach for follows from that: `root_cause/1` diagnoses *what failed*, and is
+  what a developer wants in a log; `root_error/1` is the deepest thing that still carries Errata's
+  structure, and is what you hand to a view, a reporter, or a retry decision. `root_error/1` always
+  returns an Errata error, so a caller never has to check what it got.
+
+  This came out of the boundary recipe added below. Written against `root_cause/1`, the recipe's
+  consumer module needed a three-clause `case` — with a clause-order trap, since an Errata error is
+  *also* an exception — and an `inspect/1` fallback that would have shown a person the string
+  `":timeout"`. Written against `root_error/1` it is a pipeline with no branching:
+
+  ```elixir
+  def user_message(value) do
+    value |> Errata.to_error() |> Errata.root_error() |> Errata.display_message()
+  end
+  ```
+
+  It is also more correct. The old version surfaced `Exception.message/1` from a foreign root
+  cause: `"connection refused"` reads fine in a log, but on a screen it is text nobody wrote for a
+  user, where the wrapping error's `display_message/1` is text somebody did.
+
 - An application-wide fallback for types that declare no `:default_message` (#64):
 
   ```elixir

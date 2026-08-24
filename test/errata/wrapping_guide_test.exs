@@ -1,33 +1,16 @@
 # Guards the "Unwrapping a wrapped error" recipe in `guides/wrapping-errors.md`.
-# The `iex>` examples there are doctests run by `test/guides_test.exs`; the
-# `MyAppWeb.ErrorHelpers` module is a module definition rather than a console
-# session, so it is pinned here, following `design_guide_test.exs`.
-#
-# This is a verbatim copy of the guide's module. If it stops compiling or its
-# behaviour changes, the guide is wrong and should be corrected along with it.
-defmodule ErrataWrappingGuideTest.ErrorHelpers do
-  @moduledoc false
-  require Errata
-
-  def user_message(value) do
-    error = Errata.to_error(value)
-
-    case Errata.root_cause(error) do
-      root when Errata.is_error(root) -> Errata.display_message(root)
-      %{__exception__: true} = exception -> Exception.message(exception)
-      plain_term -> inspect(plain_term)
-    end
-  end
-end
-
+# The `iex>` examples there are doctests run by `test/guides_test.exs`, and the
+# guide's `MyAppWeb.ErrorHelpers` module is a real fixture in `test/support`
+# that those doctests call directly, so it cannot drift from what is documented.
+# What is left here are the behaviours the surrounding prose claims.
 defmodule ErrataWrappingGuideTest do
   use ExUnit.Case, async: true
 
   require Errata
 
-  alias ErrataWrappingGuideTest.ErrorHelpers
   alias MyApp.Http.RetriesExhausted
   alias MyApp.Orders.OrderNotFound
+  alias MyAppWeb.ErrorHelpers
 
   describe "root_cause/1, as the recipe describes it" do
     test "an error with no cause is its own root" do
@@ -61,36 +44,40 @@ defmodule ErrataWrappingGuideTest do
   end
 
   describe "the guide's ErrorHelpers module" do
-    test "reaches the deepest exception rather than the handler's reaction" do
-      wrapped = Errata.wrap(RetriesExhausted, %RuntimeError{message: "connection refused"})
+    test "renders the deepest Errata error, not the foreign root cause" do
+      error = Errata.wrap(RetriesExhausted, :econnrefused, reason: :timeout)
 
-      # The outer error describes the retry handler, not the failure.
-      assert Errata.display_message(wrapped) ==
+      # The root cause is a bare atom with nothing on it...
+      assert Errata.root_cause(error) == :econnrefused
+
+      # ...so what reaches the person is the wrapping error's message.
+      assert ErrorHelpers.user_message(error) ==
                "the request could not be completed after 3 attempts"
-
-      assert ErrorHelpers.user_message(wrapped) == "connection refused"
     end
 
-    test "an Errata cause renders through display_message, not Exception.message" do
-      inner = OrderNotFound.new(reason: :not_found)
-      wrapped = Errata.wrap(RetriesExhausted, inner)
+    test "deliberately does not surface a foreign exception's message" do
+      error = Errata.wrap(RetriesExhausted, %RuntimeError{message: "connection refused"})
 
-      # Clause order is what makes this the display message: an Errata error is
-      # also an exception, so an is_error/1 clause placed second would never run.
-      assert ErrorHelpers.user_message(wrapped) == "the requested order does not exist"
-      refute ErrorHelpers.user_message(wrapped) =~ ":not_found"
+      assert Errata.root_cause(error) == %RuntimeError{message: "connection refused"}
+      refute ErrorHelpers.user_message(error) =~ "connection refused"
     end
 
-    test "an error with no cause renders its own display message" do
-      # No fallback clause involved: root_cause/1 returns the error itself, which
-      # the is_error/1 clause handles like any other root.
+    test "needs no fallback for an error with no cause" do
       assert ErrorHelpers.user_message(OrderNotFound.new(reason: :not_found)) ==
                "the requested order does not exist"
     end
 
-    test "a plain-term cause reaches the last clause" do
-      # `to_error(:timeout)` gives an UnknownError whose cause is the bare atom.
-      assert ErrorHelpers.user_message(:timeout) == ":timeout"
+    test "normalizes a foreign value on the way in" do
+      assert ErrorHelpers.user_message(:timeout) == "an unexpected error occurred"
+    end
+
+    test "never renders a developer message" do
+      # An Errata error is also an exception, so a naive implementation reaching
+      # for Exception.message/1 would leak the reason suffix onto the screen.
+      error = Errata.wrap(RetriesExhausted, OrderNotFound.new(reason: :not_found))
+
+      refute ErrorHelpers.user_message(error) =~ ":not_found"
+      assert ErrorHelpers.user_message(error) == "the requested order does not exist"
     end
   end
 end
