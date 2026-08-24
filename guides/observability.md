@@ -45,6 +45,62 @@ def handle([:errata, :error], _measurements, metadata, _config) do
 end
 ```
 
+## What a handler sees of the cause chain
+
+An error that wraps a lower-level failure has two facts worth reporting, and the
+outer one is usually the less useful: `Exception.message/1` on the error above
+says what your code was *trying* to do, not what went wrong. So the cause travels
+in metadata, in two shapes for two kinds of consumer:
+
+  * **`cause`** — the same nested map `Errata.to_map/1` emits, so a structured
+    log formatter or a telemetry handler gets every level of the chain with its
+    own `code`, `context` and classification. Redaction applies at each level.
+  * **`caused_by`** — one greppable line naming the deepest failure, for a console
+    reader or a single log field.
+
+```elixir
+error = Errata.wrap(RetriesExhausted, %RuntimeError{message: "connection refused"})
+
+# in a Logger backend or a telemetry handler:
+metadata.caused_by   #=> "** (RuntimeError) connection refused"
+metadata.cause       #=> %{error_type: "RuntimeError", message: "connection refused"}
+```
+
+Both are `nil` for an error with no cause. Note that `caused_by` is *not* named
+`root_cause`: `Errata.root_cause/1` returns the error itself when there is no
+cause, and a metadata key that contradicted the function of the same name would
+be worse than a slightly different word.
+
+Neither key requires the handler to know what kind of thing the cause is — a
+foreign exception, an `{:error, reason}` tuple and a nested Errata error are all
+rendered for you.
+
+### Reaching for the whole chain
+
+A telemetry handler also receives the error struct itself under `:error`, so it
+can render the full chain including stacktraces, which no metadata key carries:
+
+```elixir
+def handle_event([:errata, :error], _measurements, %{error: error}, _config) do
+  Logger.error(Errata.format_chain(error))
+end
+```
+
+`Errata.format_chain/1` is the right call for a log line about a wrapped failure:
+it shows each level and the original stacktrace, where `Errata.log/2` logs the
+outer error's message with the chain in metadata.
+
+The one place a handler still has to look at *types* is a reporter that wants an
+exception rather than a map — `Sentry.capture_exception/2`, say. Which one you
+want is an application decision, so pick it explicitly:
+
+```elixir
+case Errata.root_cause(error) do
+  %{__exception__: true} = exception -> Sentry.capture_exception(exception, extra: Errata.to_map(error))
+  _plain_term -> Sentry.capture_message(Exception.message(error), extra: Errata.to_map(error))
+end
+```
+
 ## Redacting sensitive context
 
 Everything above ships an error's `:context` outward — into your logs, your

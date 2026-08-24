@@ -34,6 +34,12 @@ defmodule ErrataTest do
     use Errata.InfrastructureError
   end
 
+  # Backs the metadata-redaction test: the nested `cause` map in log and
+  # telemetry metadata goes through the same redaction as `to_map/1`.
+  defmodule RedactingError do
+    use Errata.DomainError, default_message: "login failed", redact: [:password]
+  end
+
   defmodule TestWarningError do
     use Errata.DomainError, severity: :warning
   end
@@ -563,6 +569,55 @@ defmodule ErrataTest do
 
       on_exit(fn -> :telemetry.detach(handler_id) end)
       :ok
+    end
+
+    # The cause reaches metadata twice, for two kinds of consumer: `cause` is the
+    # same nested shape `to_map/1` emits, `caused_by` is a single greppable line.
+    # Before this, a Logger backend could not recover the chain at all — the
+    # message is the outer error's and no metadata key carried the cause.
+    test "carries the cause as both a nested map and a flat line" do
+      inner = %RuntimeError{message: "connection refused"}
+      error = TestDomainError.new(reason: :boom, cause: inner)
+
+      assert Errata.report(error) == :ok
+      assert_received {:telemetry_event, [:errata, :error], _m, metadata}
+
+      assert metadata.caused_by == "** (RuntimeError) connection refused"
+      assert metadata.cause == %{error_type: "RuntimeError", message: "connection refused"}
+    end
+
+    test "caused_by names the deepest cause through a multi-level chain" do
+      inner = TestDomainError.new(cause: :econnrefused)
+      error = TestDomainError.new(reason: :boom, cause: inner)
+
+      assert Errata.report(error) == :ok
+      assert_received {:telemetry_event, [:errata, :error], _m, metadata}
+
+      # The flat line is the bottom of the chain; the nested map has every level.
+      assert metadata.caused_by == ":econnrefused"
+      assert metadata.cause.cause == :econnrefused
+      assert metadata.cause.error_type == "ErrataTest.TestDomainError"
+    end
+
+    test "both cause keys are nil for an error with no cause" do
+      assert Errata.report(TestDomainError.new(reason: :boom)) == :ok
+      assert_received {:telemetry_event, [:errata, :error], _m, metadata}
+
+      # `caused_by` is nil here where `Errata.root_cause/1` returns the error
+      # itself — which is why the key is not called `root_cause`.
+      assert metadata.caused_by == nil
+      assert metadata.cause == nil
+    end
+
+    test "redaction reaches the nested cause map" do
+      inner = RedactingError.new(context: %{password: "hunter2", user: "jane"})
+      error = TestDomainError.new(reason: :boom, cause: inner)
+
+      assert Errata.report(error) == :ok
+      assert_received {:telemetry_event, [:errata, :error], _m, metadata}
+
+      assert metadata.cause.context == %{password: "[REDACTED]", user: "jane"}
+      refute inspect(metadata.cause) =~ "hunter2"
     end
 
     test "emits a telemetry event with standard measurements and metadata" do

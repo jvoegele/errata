@@ -464,7 +464,7 @@ defmodule Errata.Errors do
       http_status: error_type.http_status(error),
       severity: error_type.severity(error),
       retryable: error_type.retryable?(error),
-      cause: cause_map(error.cause),
+      cause: do_cause_map(error.cause),
       env: Errata.Env.to_map(error.env, error_type.__errata_source_root__()),
       context: context_map(error)
     }
@@ -478,12 +478,18 @@ defmodule Errata.Errors do
 
   defp put_errors_map(map, _error), do: map
 
+  @doc false
+  # Also used by `Errata.log/2` and `Errata.report/2` so that log and telemetry
+  # metadata carry the same cause shape the serialization does.
+  @spec cause_map(Errata.Cause.t() | nil) :: term()
+  def cause_map(cause), do: do_cause_map(cause)
+
   # Render the wrapped cause for serialization. Errata errors recurse into their
   # full structured map; standard exceptions are rendered by type and message;
   # any other term is kept if JSON-encodable and otherwise `inspect`'d. The
   # cause's stacktrace is intentionally omitted, mirroring `Errata.Env.to_map/1`.
-  defp cause_map(nil), do: nil
-  defp cause_map(%Errata.Cause{value: value}), do: cause_value_map(value)
+  defp do_cause_map(nil), do: nil
+  defp do_cause_map(%Errata.Cause{value: value}), do: cause_value_map(value)
 
   defp cause_value_map(value) when is_error(value), do: to_map(value)
 

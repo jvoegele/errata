@@ -1149,7 +1149,9 @@ defmodule Errata do
       severity: severity(error),
       retryable: retryable?(error),
       http_status: http_status(error),
-      context: context
+      context: context,
+      cause: Errata.Errors.cause_map(error.cause),
+      caused_by: caused_by_metadata(error)
     }
   end
 
@@ -1174,9 +1176,38 @@ defmodule Errata do
       retryable: retryable?(error),
       http_status: http_status(error),
       context: Errata.Errors.redacted_context(error),
+      cause: Errata.Errors.cause_map(error.cause),
+      caused_by: caused_by_metadata(error),
       env: env_metadata(error.env)
     ]
   end
+
+  # The cause reaches metadata twice on purpose, for two kinds of consumer. The
+  # `cause` map is the same shape `to_map/1` emits, so a JSON log formatter or a
+  # telemetry handler gets the whole chain with each level's own classification
+  # and redaction. `caused_by` is a single greppable line for a console reader or
+  # a log field, rendered the way `format_chain/1` renders that element but
+  # without its stacktrace.
+  #
+  # Named `caused_by` rather than `root_cause` deliberately: this is `nil` for an
+  # error with no cause, where `Errata.root_cause/1` returns the error itself. A
+  # key that contradicted the function of the same name would be worse than a
+  # slightly different word.
+  defp caused_by_metadata(%{cause: nil}), do: nil
+
+  defp caused_by_metadata(error) do
+    case root_cause(error) do
+      ^error -> nil
+      value -> format_cause_value(value)
+    end
+  end
+
+  # `Exception.format_banner/2` renders a plain term as "** (ErlangError) Erlang
+  # error: :econnrefused", which buries the useful part. Inspect those instead.
+  defp format_cause_value(value) when is_exception(value),
+    do: Exception.format_banner(:error, value)
+
+  defp format_cause_value(value), do: inspect(value)
 
   defp env_metadata(%Errata.Env{module: module, function: function, file: file, line: line}) do
     %{module: module, function: function, file: file, line: line}
