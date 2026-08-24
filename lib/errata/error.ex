@@ -44,7 +44,10 @@ defmodule Errata.Error do
   > When you `use Errata.Error`, the `Errata.Error` module will define an exception struct with
   > `defexception/1` and will generate an implementation of the `Errata.Error` behaviour.
 
-  The following options may be provided to `use Errata.Error`:
+  The following options may be provided to `use Errata.Error`. The list is closed: an option that
+  is misspelled or unrecognized raises `ArgumentError` at compile time rather than being silently
+  ignored, since a `use` option is written once and a misconfiguration would otherwise be permanent
+  and invisible.
 
     * `:default_reason` - the default value to use for the `:reason` field if it is not provided
     * `:default_message` - the default value to use for the `:message` field if it is not provided.
@@ -95,7 +98,8 @@ defmodule Errata.Error do
       `http_status/1` across them — each by a different rule, and each still overridable. Members
       must themselves be Errata errors. Defaults to `false`. See `Errata.Aggregate`.
     * `:kind` - the "kind" of Errata error to create, one of `:domain`, `:infrastructure`, or
-      `:general` (which is the default)
+      `:general` (which is the default). Accepted only here: `use Errata.DomainError` and
+      `use Errata.InfrastructureError` set the kind themselves and reject the option.
 
   > #### The `:kind` option {: .warning}
   >
@@ -269,7 +273,11 @@ defmodule Errata.Error do
 
   defmacro __using__(opts) do
     kind = Keyword.get(opts, :kind, :general)
-    ast = Errata.Errors.define(kind, __CALLER__.module, opts)
+    Errata.Errors.validate_kind_opt!(__CALLER__.module, kind)
+    # `:kind` is consumed here, so strip it before `define/3` validates the rest
+    # against its allowlist. The per-kind entry points do not strip it, which is
+    # what makes `use Errata.DomainError, kind: :general` a compile error.
+    ast = Errata.Errors.define(kind, __CALLER__.module, Keyword.delete(opts, :kind))
 
     quote do
       unquote(ast)

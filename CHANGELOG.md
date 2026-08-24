@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Unknown or misspelled `use` options are now a compile-time `ArgumentError` instead of being
+  silently ignored (#62).
+
+  ```elixir
+  defmodule Typo do
+    use Errata.DomainError, htp_status: 404
+  end
+  #=> ** (ArgumentError) invalid option(s) for Typo: [:htp_status].
+  #=>    Valid options are [:default_reason, :default_message, :reasons, :http_status, :code,
+  #=>    :severity, :retryable, :redact, :aggregate].
+  ```
+
+  Previously `define/3` validated the *values* of `:reasons` and `:aggregate` and never looked at
+  the key set, so `htp_status: 404` produced a type with the default `422` and `defualt_message:`
+  produced `message: nil` — both plausible enough that nothing downstream looks broken. This is the
+  same defect class as #3, which was fixed for `new/1` and `create/1` params but not at the `use`
+  site, which is the worse of the two: a param typo is caught the first time that line runs, while
+  a `use` option is written once and the misconfiguration is permanent.
+
+  It raises rather than warns, for consistency with the `new/1` param check and with
+  `:reasons`/`:aggregate` validation, and because the entire value of the check is that it cannot
+  be scrolled past. Strictly this is a breaking change for code passing a stray key, but such code
+  is by definition already not doing what its author intended.
+
+  Two related tightenings fall out of the same allowlist:
+
+  - `:kind` is now rejected by `use Errata.DomainError` and `use Errata.InfrastructureError`, which
+    set the kind themselves and previously ignored it. The message points at `use Errata.Error`.
+  - An invalid `:kind` *value* (`use Errata.Error, kind: :bogus`) raises `ArgumentError` naming the
+    three valid kinds, rather than a bare FunctionClauseError from the code generator.
+
 ## [1.7.0] - 2026-08-19
 
 ### Added
