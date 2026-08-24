@@ -63,9 +63,11 @@ that is not retryable — keeping the original as its cause, so nothing is
 discarded on the way through. Errata errors are returned unchanged, which makes
 the call safe to apply to something that may already be one.
 
-Pairing `to_error/2` with `root_cause/1` like this is the shape a consumer needs
-when the error in hand describes a handler's reaction rather than the failure —
-see
+Pairing `to_error/2` with the cause chain like this is the shape a consumer needs
+when the error in hand describes a handler's reaction rather than the failure.
+Note which end of the chain you want: `root_cause/1` gives you the bottom value
+whatever it is, which here is the bare `:timeout`, while `Errata.root_error/1`
+gives you the deepest thing that still carries a code and a context. See
 [unwrapping a wrapped error](wrapping-errors.md#unwrapping-a-wrapped-error).
 
 ### Wrapping versus normalizing

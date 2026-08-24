@@ -707,6 +707,50 @@ defmodule Errata do
   end
 
   @doc """
+  Returns the deepest Errata error in `error`'s cause chain.
+
+  A cause chain is Errata errors all the way down, optionally ending in one
+  foreign value — a bare atom, an `{:error, reason}` tuple, a standard exception.
+  `root_cause/1` returns that bottom value whatever it is; this returns the
+  deepest thing in the chain that is still an *Errata* error, and so still carries
+  a `code`, a `context`, a classification and a `display_message/1`.
+
+  The two differ exactly when the chain bottoms out in a foreign value:
+
+      iex> alias MyApp.Http.RetriesExhausted
+      iex> require Errata
+      iex> error = Errata.wrap(RetriesExhausted, :econnrefused)
+      iex> Errata.root_cause(error)
+      :econnrefused
+      iex> Errata.root_error(error) == error
+      true
+
+  When the chain ends in an Errata error, they are the same value.
+
+  Reach for `root_cause/1` to diagnose *what failed* — `:econnrefused` is the
+  answer a developer wants in a log. Reach for this to render, report or classify,
+  where a bare atom has nothing on it to use:
+
+      iex> alias MyApp.Http.RetriesExhausted
+      iex> require Errata
+      iex> Errata.wrap(RetriesExhausted, :econnrefused) |> Errata.root_error() |> Errata.code()
+      "RETRIES_EXHAUSTED"
+
+  Raises an `ArgumentError` if `error` is not an Errata error.
+  """
+  @spec root_error(error()) :: error()
+  def root_error(error) when is_error(error) do
+    case cause(error) do
+      deeper when is_error(deeper) -> root_error(deeper)
+      _foreign_value_or_nil -> error
+    end
+  end
+
+  def root_error(other) do
+    raise ArgumentError, "expected an Errata error, got: #{inspect(other)}"
+  end
+
+  @doc """
   Renders `error` and its full cause chain as a multi-line string for logging.
 
   The head is the error's own developer-oriented message (as returned by

@@ -316,6 +316,75 @@ defmodule ErrataTest do
     test "raise ArgumentError for non-Errata values" do
       assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.cause(:nope) end
       assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.root_cause(:nope) end
+      assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.root_error(:nope) end
+    end
+  end
+
+  # A cause chain is Errata errors all the way down, optionally ending in one
+  # foreign value — `cause/1` only accepts Errata errors, so a foreign value can
+  # never appear in the middle. `root_error/1` returns the deepest Errata error,
+  # which is what still carries a code, a context and a classification.
+  describe "root_error/1" do
+    require MyApp.Orders.OrderNotFound, as: OrderNotFound
+    require MyApp.Orders.PaymentDeclined, as: PaymentDeclined
+
+    test "is the error itself when there is no cause" do
+      error = OrderNotFound.new(reason: :not_found)
+      assert Errata.root_error(error) == error
+    end
+
+    test "is the wrapping error when the chain ends in a bare term" do
+      error = OrderNotFound.wrap(:econnrefused, reason: :lookup_failed)
+
+      assert Errata.root_cause(error) == :econnrefused
+      assert Errata.root_error(error) == error
+    end
+
+    test "is the wrapping error when the chain ends in an {:error, reason} tuple" do
+      error = OrderNotFound.wrap({:error, :enoent}, reason: :lookup_failed)
+
+      assert Errata.root_cause(error) == {:error, :enoent}
+      assert Errata.root_error(error) == error
+    end
+
+    test "is the wrapping error when the chain ends in a foreign exception" do
+      error = OrderNotFound.wrap(%RuntimeError{message: "boom"}, reason: :lookup_failed)
+
+      assert Errata.root_cause(error) == %RuntimeError{message: "boom"}
+      assert Errata.root_error(error) == error
+    end
+
+    test "walks past intermediate Errata errors to the deepest one" do
+      inner = OrderNotFound.wrap(:econnrefused, reason: :lookup_failed)
+      outer = PaymentDeclined.wrap(inner, reason: :declined)
+
+      assert Errata.root_cause(outer) == :econnrefused
+      assert Errata.root_error(outer) == inner
+    end
+
+    test "agrees with root_cause/1 when the chain ends in an Errata error" do
+      inner = OrderNotFound.new(reason: :not_found)
+      outer = PaymentDeclined.wrap(inner, reason: :declined)
+
+      assert Errata.root_error(outer) == Errata.root_cause(outer)
+      assert Errata.root_error(outer) == inner
+    end
+
+    test "always returns something with a classification on it" do
+      # The point of the function: whatever the chain bottoms out in, what comes
+      # back is an Errata error, so these never raise.
+      for error <- [
+            OrderNotFound.new(reason: :not_found),
+            OrderNotFound.wrap(:econnrefused, reason: :lookup_failed),
+            PaymentDeclined.wrap(OrderNotFound.wrap({:error, :enoent}, reason: :a), reason: :b),
+            Errata.to_error(:timeout)
+          ] do
+        root = Errata.root_error(error)
+
+        assert Errata.is_error(root)
+        assert is_integer(Errata.http_status(root))
+        assert is_binary(Errata.display_message(root))
+      end
     end
   end
 

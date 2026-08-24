@@ -124,60 +124,76 @@ iex> Errata.root_cause(Errata.to_error(:timeout))
 :timeout
 ```
 
+### When the root cause has nothing on it
+
+A cause chain is Errata errors all the way down, ending in at most one *foreign*
+value — a bare atom, an `{:error, reason}` tuple, a standard exception.
+`Errata.cause/1` only accepts Errata errors, so a foreign value can only ever be
+at the bottom.
+
+That bottom value is often the least useful thing in the chain. `:econnrefused`
+has no message, no context, no code and no classification; the error wrapping it
+has all four:
+
+```elixir
+iex> require Errata
+iex> alias MyApp.Http.RetriesExhausted
+iex> error = Errata.wrap(RetriesExhausted, :econnrefused, reason: :timeout)
+iex> Errata.root_cause(error)
+:econnrefused
+iex> Errata.root_error(error) |> Errata.code()
+"RETRIES_EXHAUSTED"
+```
+
+`Errata.root_error/1` returns the **deepest Errata error** in the chain, so what
+comes back always has a `code`, a `context`, a classification and a
+`display_message/1`. The two functions differ exactly when the chain bottoms out
+in a foreign value, and are the same value otherwise.
+
+Which to reach for follows from that:
+
+  * **`root_cause/1` diagnoses.** What actually failed. `:econnrefused` is the
+    answer a developer wants in a log or a bug report, and
+    `Errata.format_chain/1` puts it next to everything above it.
+  * **`root_error/1` renders, reports and classifies.** It is the deepest thing
+    that still carries Errata's structure, so it is what you hand to a view, a
+    reporter, or a retry decision.
+
 ### A consumer that only reads errors
 
-Putting those together — a module that classifies and renders errors, without
+Putting those together — a module that renders errors for people, without
 creating any:
 
 ```elixir
 defmodule MyAppWeb.ErrorHelpers do
-  require Errata
-
   def user_message(value) do
-    error = Errata.to_error(value)
-
-    case Errata.root_cause(error) do
-      root when Errata.is_error(root) -> Errata.display_message(root)
-      %{__exception__: true} = exception -> Exception.message(exception)
-      plain_term -> inspect(plain_term)
-    end
+    value
+    |> Errata.to_error()
+    |> Errata.root_error()
+    |> Errata.display_message()
   end
 end
 ```
 
-That is a straight dispatch on what the deepest thing in the chain *is* — no
-fallback, because there is always a deepest thing. One detail is worth copying
-rather than rediscovering.
-
-**Clause order matters.** An Errata error *is* an exception, so with the
-`is_error/1` clause second, an `OrderNotFound` root would match
-`%{__exception__: true}` and render as:
+`to_error/2` guarantees an Errata error going in, `root_error/1` guarantees one
+coming out, so there is no clause to get wrong and no term to fall back on:
 
 ```elixir
-iex> alias MyApp.Orders.OrderNotFound
-iex> Exception.message(OrderNotFound.new(reason: :not_found))
-"the requested order does not exist: :not_found"
+iex> MyAppWeb.ErrorHelpers.user_message(:timeout)
+"an unexpected error occurred"
 ```
 
-— the developer message, reason suffix and all, on a screen someone is reading.
-
-The last clause catches a cause that is a plain term, which `Errata.to_error/2`
-produces whenever it wraps a bare value. `inspect/1` is a placeholder there: a
-bare `:timeout` is not something to show a person, and what to say instead is
-your application's call.
-
-Note the `require Errata`. The guards are **defguards**, so a module needs it
-even to call them fully qualified — and a module like this one has no reason to
-`use Errata`, which is how most examples in these guides pick the requirement up
-without showing it. Without the `require`, this fails to compile with:
-
-```
-you must require the module Errata before invoking macro Errata.is_error/1 inside a guard
+```elixir
+iex> require Errata
+iex> alias MyApp.Http.RetriesExhausted
+iex> MyAppWeb.ErrorHelpers.user_message(Errata.wrap(RetriesExhausted, :econnrefused))
+"the request could not be completed after 3 attempts"
 ```
 
-For the logging side of the same question, reach for `Errata.format_chain/1`
-above rather than `root_cause/1` — a log wants the whole chain, where a person
-wants the one message that names the failure.
+Note that this deliberately does *not* reach for `Exception.message/1` on a
+foreign root cause. A `%RuntimeError{message: "connection refused"}` reads fine
+in a log, but on a screen it is text nobody wrote for a user — the wrapping
+error's `display_message/1` is the one somebody did.
 
 ## Enriching context as an error propagates
 
