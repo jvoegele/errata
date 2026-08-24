@@ -7,7 +7,9 @@
 # any single test file that needs them can be run on its own.
 defmodule MyApp.Orders.OrderNotFound do
   @moduledoc false
-  use Errata.DomainError, default_message: "the requested order does not exist"
+  use Errata.DomainError,
+    default_message: "the requested order does not exist",
+    code: "ORDER_NOT_FOUND"
 end
 
 defmodule MyApp.Orders.PaymentDeclined do
@@ -49,4 +51,24 @@ defmodule MyApp.Errors do
     do: RequestFailed.new(reason: :timeout, context: %{url: url}, cause: timeout)
 
   def to_error(other), do: Errata.to_error(other)
+end
+
+# Backs the worked boundary example: an aggregate validation failure and two
+# member errors, which together render a real validation response body.
+defmodule MyApp.Orders.EmailInvalid do
+  @moduledoc false
+  use Errata.DomainError, default_message: "email is not a valid address", code: "EMAIL_INVALID"
+end
+
+defmodule MyApp.Orders.PostcodeRequired do
+  @moduledoc false
+  use Errata.DomainError, default_message: "postcode is required", code: "POSTCODE_REQUIRED"
+end
+
+defmodule MyApp.Orders.ValidationFailed do
+  @moduledoc false
+  use Errata.DomainError,
+    aggregate: true,
+    default_message: "the order could not be validated",
+    code: "VALIDATION_FAILED"
 end
