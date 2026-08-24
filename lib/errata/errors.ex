@@ -9,6 +9,30 @@ defmodule Errata.Errors do
   # fields (`:kind`, `:env`, `:__errata_error__`) are managed by Errata itself.
   @allowed_param_keys [:message, :reason, :context, :cause]
 
+  # The complete set of options accepted by `use Errata.Error` and its per-kind
+  # variants, and the single source of truth for that surface. `define/3` rejects
+  # any key not listed here, so a misspelled option is a compile error rather
+  # than a permanently and invisibly misconfigured error type.
+  #
+  # `:kind` is deliberately absent: it is meaningful only via `use Errata.Error`,
+  # which reads and strips it before calling `define/3`.
+  @type_opts [
+    :default_reason,
+    :default_message,
+    :reasons,
+    :http_status,
+    :code,
+    :severity,
+    :retryable,
+    :redact,
+    :aggregate
+  ]
+
+  # The closed set of error kinds. Closed deliberately: `Errata.is_error/1` and
+  # its siblings are structural guards over these three, and a fourth would break
+  # that. See issue #38 for the decision.
+  @kinds [:general, :domain, :infrastructure]
+
   # Valid values for the `:severity` option, most to least severe. This is the
   # set of `t:Logger.level/0` values, listed here rather than read from
   # `Logger.levels/0`, which does not exist on all supported Elixir versions.
@@ -411,7 +435,9 @@ defmodule Errata.Errors do
 
   @doc false
   def define(kind, module_name, opts \\ [])
-      when kind in [:domain, :infrastructure, :general] and is_atom(module_name) do
+      when kind in @kinds and is_atom(module_name) do
+    validate_opts!(module_name, opts)
+
     reasons = Keyword.get(opts, :reasons)
     validate_reasons_opt!(module_name, reasons, Keyword.get(opts, :default_reason))
     validate_aggregate_opt!(module_name, opts)
@@ -747,6 +773,41 @@ defmodule Errata.Errors do
   # Validate the `:reasons` option at the `use` site (compile time). When given,
   # it must be a non-empty list of atoms, and any `:default_reason` must be one
   # of the declared reasons.
+  @doc false
+  # Validates the user-supplied `:kind` value. Lives here with the other option
+  # validators, but is called from `Errata.Error.__using__/1`, which is the only
+  # entry point that lets a user choose the kind at all.
+  def validate_kind_opt!(_module_name, kind) when kind in @kinds, do: :ok
+
+  def validate_kind_opt!(module_name, kind) do
+    raise ArgumentError,
+          ":kind for #{inspect(module_name)} must be one of #{inspect(@kinds)}, " <>
+            "got: #{inspect(kind)}"
+  end
+
+  defp validate_opts!(module_name, opts) do
+    case Keyword.keys(opts) -- @type_opts do
+      [] ->
+        :ok
+
+      unknown ->
+        raise ArgumentError,
+              "invalid option(s) for #{inspect(module_name)}: #{inspect(Enum.uniq(unknown))}. " <>
+                "Valid options are #{inspect(@type_opts)}." <> kind_opt_hint(unknown)
+    end
+  end
+
+  # `:kind` is a real option, just not on every entry point, so say which one it
+  # belongs to rather than leaving the reader to infer it from its absence.
+  defp kind_opt_hint(unknown) do
+    if :kind in unknown do
+      " The :kind option is only available via `use Errata.Error` — " <>
+        "Errata.DomainError and Errata.InfrastructureError set the kind themselves."
+    else
+      ""
+    end
+  end
+
   defp validate_reasons_opt!(_module, nil, _default_reason), do: :ok
 
   defp validate_reasons_opt!(module, reasons, default_reason) do
