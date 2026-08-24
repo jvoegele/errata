@@ -55,6 +55,16 @@ defmodule Errata.Error do
       `:context` (naming the particular order or item, say), override the generated
       `display_message/1` function instead — `Errata.display_message/1` and `c:to_map/1` both
       dispatch through it. See `Errata.display_message/1`.
+
+      A type that declares no `:default_message` renders as `nil` through every display path.
+      To give every such type a floor rather than repeating a fallback at each boundary, set an
+      application-wide default:
+
+          config :errata, default_display_message: "an unexpected error occurred"
+
+      It applies only where the type declares nothing and the caller passed no `:message`, and
+      defaults to `nil`, which is the historical behaviour. This mirrors `config :errata, redact:`
+      — a global floor that individual types refine.
     * `:reasons` - an optional list of atoms enumerating the valid reasons for this error type.
       When given, creating an error (via `c:new/1`, `c:create/1`, `c:wrap/2`, or `raise/2`) with a
       `:reason` outside this set raises an `ArgumentError`. A `nil` (unspecified) reason is always

@@ -351,6 +351,102 @@ defmodule Errata.Errors do
     end
   end
 
+  # Every key `to_map/1` can produce. `:errors` appears on aggregate types only,
+  # but is listed here so that projecting on it is accepted rather than treated
+  # as a typo.
+  @to_map_keys [
+    :error_type,
+    :code,
+    :reason,
+    :message,
+    :kind,
+    :http_status,
+    :severity,
+    :retryable,
+    :cause,
+    :env,
+    :context,
+    :errors
+  ]
+
+  @doc false
+  @spec project(map(), keyword()) :: map()
+  def project(map, []), do: map
+
+  def project(map, opts) do
+    map
+    |> take_keys(projection!(opts))
+    |> project_nested(opts)
+  end
+
+  defp take_keys(map, {:only, keys}), do: Map.take(map, keys)
+  defp take_keys(map, {:except, keys}), do: Map.drop(map, keys)
+
+  # The projection has to reach members and wrapped causes too. Dropping `:env`
+  # from an aggregate while leaving every member's `:env` in place would be a
+  # trap of exactly the kind this option exists to remove.
+  defp project_nested(map, opts) do
+    map
+    |> project_errors(opts)
+    |> project_cause(opts)
+  end
+
+  defp project_errors(%{errors: errors} = map, opts) when is_list(errors),
+    do: %{map | errors: Enum.map(errors, &project(&1, opts))}
+
+  defp project_errors(map, _opts), do: map
+
+  # Recurse only into a cause that is itself a full Errata error map. A standard
+  # exception serializes to `%{error_type: ..., message: ...}`, which has no
+  # `:env` to drop and would be mangled by an `:only` projection.
+  defp project_cause(%{cause: %{kind: _} = cause} = map, opts),
+    do: %{map | cause: project(cause, opts)}
+
+  defp project_cause(map, _opts), do: map
+
+  defp projection!(opts) do
+    case {Keyword.fetch(opts, :only), Keyword.fetch(opts, :except)} do
+      {{:ok, _}, {:ok, _}} ->
+        raise ArgumentError, "Errata.to_map/2 accepts :only or :except, but not both"
+
+      {{:ok, keys}, :error} ->
+        {:only, validate_keys!(:only, keys)}
+
+      {:error, {:ok, keys}} ->
+        {:except, validate_keys!(:except, keys)}
+
+      {:error, :error} ->
+        raise ArgumentError,
+              "invalid option(s) for Errata.to_map/2: #{inspect(Keyword.keys(opts))}. " <>
+                "Valid options are [:only, :except]."
+    end
+  end
+
+  defp validate_keys!(opt, keys) when is_list(keys) do
+    case keys -- @to_map_keys do
+      [] ->
+        keys
+
+      unknown ->
+        raise ArgumentError,
+              "invalid key(s) for Errata.to_map/2 #{inspect(opt)}: #{inspect(unknown)}. " <>
+                "Valid keys are #{inspect(@to_map_keys)}."
+    end
+  end
+
+  defp validate_keys!(opt, keys) do
+    raise ArgumentError,
+          "Errata.to_map/2 #{inspect(opt)} must be a list of keys, got: #{inspect(keys)}"
+  end
+
+  @doc false
+  # The application-wide fallback for types that declare no `:default_message`.
+  # Read at runtime rather than compile time, mirroring `Errata.Redaction.global_keys/0`,
+  # so an application can set it in runtime config. Defaults to `nil`, which is
+  # the pre-1.8 behaviour.
+  @spec default_display_message() :: String.t() | nil
+  def default_display_message, do: Application.get_env(:errata, :default_display_message)
+
   @doc false
   def to_map(%error_type{} = error) when is_error(error) do
     %{
@@ -369,7 +465,7 @@ defmodule Errata.Errors do
       severity: error_type.severity(error),
       retryable: error_type.retryable?(error),
       cause: cause_map(error.cause),
-      env: Errata.Env.to_map(error.env),
+      env: Errata.Env.to_map(error.env, error_type.__errata_source_root__()),
       context: context_map(error)
     }
     |> put_errors_map(error)
@@ -443,6 +539,7 @@ defmodule Errata.Errors do
     validate_aggregate_opt!(module_name, opts)
 
     aggregate_def = define_aggregate_reflection(opts)
+    source_root_def = define_source_root_reflection()
     attribute_defs = define_attributes(module_name)
     type_def = define_type(kind)
     reasons_def = define_reasons(reasons)
@@ -459,6 +556,7 @@ defmodule Errata.Errors do
 
     quote do
       unquote(aggregate_def)
+      unquote(source_root_def)
       unquote(attribute_defs)
       unquote(type_def)
       unquote(reasons_def)
@@ -651,7 +749,9 @@ defmodule Errata.Errors do
       @doc unquote(doc)
       @spec display_message(Errata.error()) :: String.t() | nil
       def display_message(error)
-      def display_message(%{message: message}), do: message
+
+      def display_message(%{message: message}),
+        do: message || Errata.Errors.default_display_message()
 
       defoverridable display_message: 1
     end
@@ -904,6 +1004,20 @@ defmodule Errata.Errors do
       other ->
         raise ArgumentError,
               ":aggregate for #{inspect(module_name)} must be true or false, got: #{inspect(other)}"
+    end
+  end
+
+  # `define/3` runs while the *using* application compiles, so `File.cwd!/0` here
+  # is that application's project root — which cannot be recovered at runtime,
+  # since a release's cwd is the release root rather than the build tree. Baking
+  # it in is what lets `to_map/1` emit a repo-relative source path instead of the
+  # build machine's absolute one. See #63.
+  defp define_source_root_reflection do
+    root = File.cwd!()
+
+    quote do
+      @doc false
+      def __errata_source_root__, do: unquote(root)
     end
   end
 

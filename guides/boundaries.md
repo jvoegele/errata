@@ -343,6 +343,48 @@ Two things worth being clear about:
 so a telemetry handler can route and tag on exactly what a boundary branches on
 — see [Reporting errors](observability.md).
 
+### Two audiences, two projections
+
+`to_map/1` is the **full record**. It is aimed at an error reporter, which wants
+everything it can get — including `:env`, the module, function, and source line
+where the error was created.
+
+That is the wrong map to hand a client. A response body should carry what the
+caller can act on and nothing else, and in particular should not describe your
+source layout. Pass `:only` or `:except` to say which audience you are serving:
+
+```elixir
+iex> alias MyApp.Http.RequestFailed
+iex> map = Errata.to_map(RequestFailed.new(reason: :timeout), only: [:code, :message, :retryable])
+iex> Map.keys(map) |> Enum.sort()
+[:code, :message, :retryable]
+```
+
+```elixir
+iex> alias MyApp.Http.RequestFailed
+iex> map = Errata.to_map(RequestFailed.new(reason: :timeout), except: [:env])
+iex> Map.has_key?(map, :env)
+false
+```
+
+The projection reaches aggregate members and a wrapped Errata cause too, so
+`except: [:env]` removes every `:env` in the structure rather than only the
+outermost one. Keys are validated, so a misspelled one raises rather than
+quietly selecting nothing.
+
+> #### The encoder protocols emit the full map {: .warning}
+>
+> `Jason.encode!/1` and `JSON.encode!/1` on an error struct produce `to_map/1`
+> — the reporting projection, `:env` included. That is right for the audience the
+> protocols exist for, but it means **`render("error.json", error: error)` handing
+> the struct straight to an encoder puts your source paths in the response body.**
+> At a client-facing boundary, select fields explicitly and encode the resulting
+> map rather than the error.
+
+The source path that `to_map/1` does emit is relative to the project root of the
+application that defined the error type, so it reads `lib/my_app/orders.ex:29`
+rather than naming the directory layout of the machine that built the release.
+
 ## Rebuilding an error from its encoded form
 
 Everything above works from the encoded map alone. When the receiving side is an
