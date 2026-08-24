@@ -286,6 +286,33 @@ defmodule ErrataTest do
       assert Errata.root_cause(error) == %RuntimeError{message: "x"}
     end
 
+    # An error's chain includes the error itself, so root_cause/1 is total: it
+    # never returns nil for an uncaused error, and never needs a `|| error` at
+    # the call site. `cause/1` is what answers "is there a cause?".
+    test "root_cause/1 returns the error itself when it has no cause" do
+      error = OrderNotFound.new(reason: :not_found)
+
+      assert Errata.root_cause(error) == error
+      assert Errata.cause(error) == nil
+    end
+
+    test "root_cause/1 is total through a chain of uncaused Errata errors" do
+      inner = OrderNotFound.new(reason: :not_found)
+      outer = PaymentDeclined.wrap(inner, reason: :declined)
+
+      # The deepest thing is `inner` itself, not nil and not `outer`.
+      assert Errata.root_cause(outer) == inner
+    end
+
+    test "root_cause/1 agrees with format_chain/1 about what the chain contains" do
+      # format_chain/1 already renders an uncaused error as a one-element chain;
+      # root_cause/1 now models the chain the same way.
+      error = OrderNotFound.new(reason: :not_found)
+
+      refute Errata.format_chain(error) =~ "Caused by"
+      assert Errata.root_cause(error) == error
+    end
+
     test "raise ArgumentError for non-Errata values" do
       assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.cause(:nope) end
       assert_raise ArgumentError, ~r/expected an Errata error/, fn -> Errata.root_cause(:nope) end

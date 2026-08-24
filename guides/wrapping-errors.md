@@ -94,43 +94,33 @@ iex> Errata.root_cause(error)
 `root_cause/1` follows the chain all the way down, however many layers deep the
 original failure is.
 
-### Two things to know before you use it
-
-**It returns `nil` when there is no cause**, rather than the error itself:
-
-```elixir
-iex> alias MyApp.Orders.OrderNotFound
-iex> Errata.root_cause(OrderNotFound.new(reason: :not_found))
-nil
-```
-
-`nil` answers the question `root_cause/1` asks: there is no cause. It is rarely
-what a *call site* wants, though — "show the most actionable failure you have"
-means falling back to the error in hand when there is nothing underneath it:
+An error's chain always includes the error itself, so `root_cause/1` always
+returns something. An error with no cause is its own root:
 
 ```elixir
 iex> alias MyApp.Orders.OrderNotFound
 iex> error = OrderNotFound.new(reason: :not_found)
-iex> Errata.display_message(Errata.root_cause(error) || error)
-"the requested order does not exist"
+iex> Errata.root_cause(error) == error
+true
 ```
 
-`Errata.root_cause(error) || error` is the form to reach for.
-
-**It raises on a value that is not an Errata error**, like every accessor:
+That means no fallback at the call site — `Errata.display_message(Errata.root_cause(error))`
+gives you the most specific message the chain has, whether or not there is a
+cause underneath. To ask whether an error *has* a cause, use `Errata.cause/1`,
+which is the function for that question:
 
 ```elixir
-iex> Errata.root_cause(:timeout)
-** (ArgumentError) expected an Errata error, got: :timeout
+iex> alias MyApp.Orders.OrderNotFound
+iex> Errata.cause(OrderNotFound.new(reason: :not_found))
+nil
 ```
 
-A consumer handling whatever a `with` chain returned does not necessarily have
-one. Normalize first, and the two compose:
+**It raises on a value that is not an Errata error**, like every accessor. A
+consumer handling whatever a `with` chain returned does not necessarily have one,
+so normalize first — `to_error/2` and `root_cause/1` compose:
 
 ```elixir
-iex> value = :timeout
-iex> error = Errata.to_error(value)
-iex> Errata.root_cause(error) || error
+iex> Errata.root_cause(Errata.to_error(:timeout))
 :timeout
 ```
 
@@ -147,18 +137,20 @@ defmodule MyAppWeb.ErrorHelpers do
     error = Errata.to_error(value)
 
     case Errata.root_cause(error) do
-      cause when Errata.is_error(cause) -> Errata.display_message(cause)
+      root when Errata.is_error(root) -> Errata.display_message(root)
       %{__exception__: true} = exception -> Exception.message(exception)
-      _no_cause_or_plain_term -> Errata.display_message(error)
+      plain_term -> inspect(plain_term)
     end
   end
 end
 ```
 
-Two details in that `case` are worth copying rather than rediscovering.
+That is a straight dispatch on what the deepest thing in the chain *is* — no
+fallback, because there is always a deepest thing. One detail is worth copying
+rather than rediscovering.
 
 **Clause order matters.** An Errata error *is* an exception, so with the
-`is_error/1` clause second, an `OrderNotFound` cause would match
+`is_error/1` clause second, an `OrderNotFound` root would match
 `%{__exception__: true}` and render as:
 
 ```elixir
@@ -169,17 +161,10 @@ iex> Exception.message(OrderNotFound.new(reason: :not_found))
 
 — the developer message, reason suffix and all, on a screen someone is reading.
 
-**The last clause covers two cases at once**: `root_cause/1` returned `nil`, or it
-returned a plain term with no message of its own. `Errata.to_error/2` produces the
-second whenever it wraps a bare value:
-
-```elixir
-iex> Errata.root_cause(Errata.to_error(:timeout))
-:timeout
-```
-
-`:timeout` is not something to show a person, so the outer error's message wins
-there even though it is less specific.
+The last clause catches a cause that is a plain term, which `Errata.to_error/2`
+produces whenever it wraps a bare value. `inspect/1` is a placeholder there: a
+bare `:timeout` is not something to show a person, and what to say instead is
+your application's call.
 
 Note the `require Errata`. The guards are **defguards**, so a module needs it
 even to call them fully qualified — and a module like this one has no reason to
