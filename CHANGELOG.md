@@ -124,6 +124,25 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   — the guide's examples are ExUnit assertions rather than `iex>` sessions, so they cannot be
   doctests.
 
+- An "unwrapping a wrapped error" recipe in `guides/wrapping-errors.md` (#72). A dogfooding
+  application hand-wrote a six-line `root_cause/1` loop and shipped it without noticing
+  `Errata.root_cause/1` exists — and what it wrote differs from the built-in in the two ways that
+  would have stopped it dropping into the call site anyway.
+
+  `root_cause/1` returns `nil` when there is no cause, which is the truthful answer to the question
+  it asks but rarely the one a call site wants, so `Errata.root_cause(error) || error` is the form
+  to reach for — an idiom that appeared nowhere in the docs. And it raises on a non-Errata value,
+  like every accessor, so a consumer holding whatever a `with` chain returned has to normalize
+  first; `to_error/2` and `root_cause/1` compose, and the guides never paired them.
+
+  `root_cause/1` was mentioned twice before, both times as the tail of a sentence about something
+  else, and never under a heading a reader would scan for when the question is "this error's
+  message is useless, how do I get to the real one".
+
+  The recipe ends with a consumer-side module that only *reads* errors, which is also the natural
+  place to show that the guards are `defguard`s: a module needs `require Errata` even to call them
+  fully qualified, and every other guide example picks that up invisibly via `use Errata`.
+
 - A worked end-to-end boundary example in `guides/boundaries.md` (#68). The guides showed the
   Phoenix fallback controller three times and never the view it renders through, so every adopter
   independently decided what an error looks like on the wire — the decision the `:env` exposure

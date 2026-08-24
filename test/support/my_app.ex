@@ -42,6 +42,15 @@ defmodule MyApp.Http.RequestFailed do
   use Errata.InfrastructureError, default_message: "the request to an upstream service failed"
 end
 
+# Backs the "Unwrapping a wrapped error" recipe: a type whose own message
+# describes the handler's reaction rather than the failure, which is the case
+# that makes reaching for the cause worthwhile.
+defmodule MyApp.Http.RetriesExhausted do
+  @moduledoc false
+  use Errata.InfrastructureError,
+    default_message: "the request could not be completed after 3 attempts"
+end
+
 defmodule MyApp.Errors do
   @moduledoc false
 
