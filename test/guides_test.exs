@@ -7,9 +7,11 @@
 #
 # `doctest_file/1` requires Elixir 1.15, which is the library's minimum.
 #
-# Guides with no `iex>` examples (`design.md`, `observability.md`) are covered
-# differently: `design.md`'s examples are module definitions rather than console
-# sessions and are pinned by `test/errata/design_guide_test.exs`.
+# Guides with no `iex>` examples (`design.md`, `observability.md`, `testing.md`)
+# are covered differently: `design.md`'s examples are module definitions rather
+# than console sessions and are pinned by `test/errata/design_guide_test.exs`,
+# and `testing.md`'s are ExUnit assertions pinned by
+# `test/errata/testing_guide_test.exs`.
 defmodule GuidesTest do
   use ExUnit.Case, async: true
 

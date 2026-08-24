@@ -181,7 +181,9 @@ that it can be rendered as a string or encoded as JSON automatically.
 > level of the test file**, above the test module, or set
 > `consolidate_protocols: Mix.env() != :test` in `mix.exs` — the first is local and
 > needs no project change, the second is one line and removes the trap for the
-> whole suite. This project does both.
+> whole suite. This project does both. See
+> [Testing with Errata](guides/testing.md) for this and the other things worth
+> knowing before writing the first test.
 
 ## Creating errors as return values
 
@@ -305,6 +307,9 @@ travels, converted where it leaves, reported:
     and rendering an error for a user.
   * **[Reporting errors](guides/observability.md)** — `Errata.log/2`,
     `Errata.report/2`, the telemetry contract, and redacting sensitive context.
+  * **[Testing with Errata](guides/testing.md)** — where fixture types must be
+    defined, asserting on errors readably, proving redaction works, and the
+    telemetry and log seams.
   * **[Design notes](guides/design.md)** — choosing a kind, choosing between an
     error type and a reason, and why Errata works the way it does.
 

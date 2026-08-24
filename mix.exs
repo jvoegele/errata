@@ -70,6 +70,7 @@ defmodule Errata.MixProject do
         "guides/wrapping-errors.md": [title: "Wrapping and composing errors"],
         "guides/boundaries.md": [title: "Errors at a boundary"],
         "guides/observability.md": [title: "Reporting errors"],
+        "guides/testing.md": [title: "Testing with Errata"],
         "guides/design.md": [title: "Design notes"],
         "CHANGELOG.md": [title: "Changelog"],
         LICENSE: [title: "License"]

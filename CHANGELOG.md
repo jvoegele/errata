@@ -100,6 +100,41 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - An invalid `:kind` *value* (`use Errata.Error, kind: :bogus`) raises `ArgumentError` naming the
     three valid kinds, rather than a bare FunctionClauseError from the code generator.
 
+### Documentation
+- A new guide, `guides/testing.md` (#69). There was no guidance on testing an application that
+  uses Errata, and what existed was scattered — one line in a README tip box, one convention
+  visible only by reading this repository's own test files. Three of the five things it covers
+  produce failures that read as library bugs at first glance.
+
+  Its core advice is to **assert through the accessors**. That was measured rather than assumed:
+  on an identical wrong-reason assertion, `assert Errata.reason(error) == :x` produces a two-line
+  diff naming the field, where nulling `:env` produces ~16 lines, a whole-struct pattern match
+  ~30, and plain `==` ~40. Pattern matching is explicitly *not* recommended despite asserting
+  correctly, because ExUnit expands the entire right-hand term on a failed match and the `:env`
+  stacktrace swamps the output.
+
+  Also covers where fixture types must be defined and why; the seam at which redaction has to be
+  asserted (`error.context` still holds the plaintext — checking it first is how redaction looks
+  broken); the two things `:redact` structurally cannot protect, with a `refute_leaks/2` recipe;
+  the `:telemetry_test` idiom, which needs no new dependency; that `capture_log/1` needs
+  `metadata: :all` before the metadata `log/2` exists for appears; and that `assert_raise` matches
+  the *developer* message rather than the display message.
+
+  Every example is pinned by `test/errata/testing_guide_test.exs`, following `design_guide_test.exs`
+  — the guide's examples are ExUnit assertions rather than `iex>` sessions, so they cannot be
+  doctests.
+
+- A worked end-to-end boundary example in `guides/boundaries.md` (#68). The guides showed the
+  Phoenix fallback controller three times and never the view it renders through, so every adopter
+  independently decided what an error looks like on the wire — the decision the `:env` exposure
+  above makes easy to get wrong.
+
+  The `to_map/2` projection turns the view into a single call, and two properties of it do the
+  work: the projection recurses into aggregate members, so each renders by the same rule including
+  its own `code`; and `:errors` is absent for a non-aggregate, so one clause covers both shapes.
+  That gives the validation-response case a worked example for the first time — it is what
+  aggregates were built for, and nothing showed one crossing an HTTP boundary.
+
 ## [1.7.0] - 2026-08-19
 
 ### Added
