@@ -23,7 +23,7 @@ defmodule Errata.Cause do
   wrapped_, the `:stacktrace` of the cause records _where the original error
   occurred_.
 
-  Use `Errata.cause/1`, `Errata.root_cause/1` and `Errata.root_error/1` to access the wrapped value(s),
+  Use `Errata.cause/1` and `Errata.root_error/1` to access the wrapped value(s),
   and `Errata.format_chain/1` to render a full cause chain for logging.
   """
 

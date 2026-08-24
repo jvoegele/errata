@@ -81,100 +81,65 @@ iex> Errata.display_message(error)
 ```
 
 "After 3 attempts" describes the retry handler's reaction. `"connection refused"`
-is the thing that actually went wrong, and it is one call away:
+is the thing that actually went wrong.
+
+**A cause chain is a chain of Errata errors, the deepest of which may carry a
+foreign original** — the exception or value your code actually caught. Two
+functions follow from that, and between them they cover every question:
 
 ```elixir
 iex> require Errata
 iex> alias MyApp.Http.RetriesExhausted
 iex> error = Errata.wrap(RetriesExhausted, %RuntimeError{message: "connection refused"})
-iex> Errata.root_cause(error)
+iex> Errata.root_error(error) |> Errata.display_message()
+"the request could not be completed after 3 attempts"
+iex> Errata.root_error(error) |> Errata.cause()
 %RuntimeError{message: "connection refused"}
 ```
 
-`root_cause/1` follows the chain all the way down, however many layers deep the
-original failure is.
+`Errata.root_error/1` walks to the deepest **error**, however many layers down it
+is, and always returns one — an error with no cause is its own root. So what
+comes back always has a `code`, a `context`, a classification and a
+`display_message/1`, and there is no fallback to write at the call site.
 
-An error's chain always includes the error itself, so `root_cause/1` always
-returns something. An error with no cause is its own root:
-
-```elixir
-iex> alias MyApp.Orders.OrderNotFound
-iex> error = OrderNotFound.new(reason: :not_found)
-iex> Errata.root_cause(error) == error
-true
-```
-
-That means no fallback at the call site — `Errata.display_message(Errata.root_cause(error))`
-gives you the most specific message the chain has, whether or not there is a
-cause underneath. To ask whether an error *has* a cause, use `Errata.cause/1`,
-which is the function for that question:
+`Errata.cause/1` on that error gives the foreign original, or `nil` when the chain
+is Errata errors the whole way:
 
 ```elixir
 iex> alias MyApp.Orders.OrderNotFound
-iex> Errata.cause(OrderNotFound.new(reason: :not_found))
+iex> OrderNotFound.new(reason: :not_found) |> Errata.root_error() |> Errata.cause()
 nil
 ```
 
-**It raises on a value that is not an Errata error**, like every accessor. A
-consumer handling whatever a `with` chain returned does not necessarily have one,
-so normalize first — `to_error/2` and `root_cause/1` compose:
+For a log, reach for neither: `Errata.format_chain/1` renders every level with the
+original stacktrace, which no accessor exposes.
+
+> #### `root_cause/1` is deprecated {: .warning}
+>
+> It returns an Errata error or a foreign value depending on how the chain ends,
+> so a caller has to work out which it got. `Errata.root_cause(error)` is
+> equivalent to `Errata.cause(Errata.root_error(error)) || Errata.root_error(error)`;
+> in practice you want one of the two halves, not the union.
+
+Every accessor **raises on a value that is not an Errata error**. A consumer
+handling whatever a `with` chain returned does not necessarily have one, so
+normalize first — `to_error/2` composes with all of them:
 
 ```elixir
-iex> Errata.root_cause(Errata.to_error(:timeout))
-:timeout
+iex> Errata.to_error(:timeout) |> Errata.root_error() |> Errata.code()
+nil
 ```
 
-### When the root cause has nothing on it
+### Why the foreign original is kept separate
 
-A cause chain is Errata errors all the way down, ending in at most one *foreign*
-value — a bare atom, an `{:error, reason}` tuple, a standard exception.
-`Errata.cause/1` only accepts Errata errors, so a foreign value can only ever be
-at the bottom.
+`Errata.cause/1` only accepts Errata errors, so a foreign value can only ever sit
+at the *bottom* of a chain, never in the middle. That bottom value is often the
+least useful thing there: `:econnrefused` has no message, no context, no code and
+no classification, while the error wrapping it has all four.
 
-That bottom value is often the least useful thing in the chain. `:econnrefused`
-has no message, no context, no code and no classification; the error wrapping it
-has all four:
-
-```elixir
-iex> require Errata
-iex> alias MyApp.Http.RetriesExhausted
-iex> error = Errata.wrap(RetriesExhausted, :econnrefused, reason: :timeout)
-iex> Errata.root_cause(error)
-:econnrefused
-iex> Errata.root_error(error) |> Errata.code()
-"RETRIES_EXHAUSTED"
-```
-
-`Errata.root_error/1` returns the **deepest Errata error** in the chain, so what
-comes back always has a `code`, a `context`, a classification and a
-`display_message/1`. The two functions differ exactly when the chain bottoms out
-in a foreign value, and are the same value otherwise.
-
-Which to reach for follows from that:
-
-  * **`root_cause/1` diagnoses.** What actually failed. `:econnrefused` is the
-    answer a developer wants in a log or a bug report, and
-    `Errata.format_chain/1` puts it next to everything above it.
-  * **`root_error/1` renders, reports and classifies.** It is the deepest thing
-    that still carries Errata's structure, so it is what you hand to a view, a
-    reporter, or a retry decision.
-
-They are not two views of the same fact. `wrap/2` keeps the cause in `:cause`
-and copies nothing out of it, so the two answers can be entirely different
-sentences:
-
-```elixir
-iex> require Errata
-iex> alias MyApp.Http.RetriesExhausted
-iex> error = Errata.wrap(RetriesExhausted, %RuntimeError{message: "connection refused"})
-iex> Errata.display_message(Errata.root_error(error))
-"the request could not be completed after 3 attempts"
-iex> Errata.root_cause(error)
-%RuntimeError{message: "connection refused"}
-```
-
-Neither is recoverable from the other's fields — the wrapping error's `:reason`
-and `:context` are untouched by what it wraps:
+They are also not two views of the same fact. `wrap/2` keeps the cause in
+`:cause` and copies nothing out of it, so a wrapped error's `:reason` and
+`:context` are untouched by what it wraps:
 
 ```elixir
 iex> require Errata
@@ -184,11 +149,14 @@ iex> {Errata.reason(error), Errata.context(error)}
 {nil, %{}}
 ```
 
-One caveat on `root_cause/1`, and it is why the pipeline below uses
-`root_error/1`: what it returns may be an Errata error *or* a foreign value,
-depending on how the chain ends. That is fine when you are about to `inspect/1`
-it or assert on it in a test. It means a branch when you intend to do anything
-else.
+So the two ends of a chain answer different questions, and which you want depends
+on who is reading:
+
+  * **Rendering, reporting, classifying** — `root_error/1`. It is the deepest
+    thing that still carries Errata's structure, so it is what you hand to a
+    view, a reporter, or a retry decision.
+  * **Diagnosing** — `Errata.cause/1` on the root error, for the original your
+    code caught, or `format_chain/1` for the whole picture with stacktraces.
 
 ### A consumer that only reads errors
 

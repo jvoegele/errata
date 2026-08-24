@@ -25,7 +25,7 @@ defmodule Errata.UnknownError do
   The original value is preserved as the error's cause, so nothing is lost by
   normalizing:
 
-      iex> Errata.to_error(:enoent) |> Errata.root_cause()
+      iex> Errata.to_error(:enoent) |> Errata.cause()
       :enoent
 
   Applications that would rather see their own type at the end of the chain can

@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Deprecated
+- **`Errata.root_cause/1`.** Use `root_error/1`, or `cause/1` on it to reach the foreign original.
+  The function still works and will until 2.0; calling it now produces a compiler warning naming
+  the replacement.
+
+  A cause chain is **a chain of Errata errors, the deepest of which may carry a foreign original** —
+  the exception or value your code actually caught. `root_cause/1` is the one accessor that does
+  not fit that model: it returns an Errata error *or* a foreign value depending on how the chain
+  ends, so a caller who wants to act on the result has to work out which it got. That is the same
+  ergonomic problem `root_error/1` was added to remove.
+
+  ```elixir
+  # instead of
+  Errata.root_cause(error)
+
+  # to render, report or classify — always an Errata error:
+  Errata.root_error(error)
+
+  # to reach the original your code caught — or nil if there wasn't one:
+  Errata.root_error(error) |> Errata.cause()
+
+  # for a log, better than either — every level, with stacktraces:
+  Errata.format_chain(error)
+  ```
+
+  `root_cause(error)` is exactly `cause(root_error(error)) || root_error(error)`. In practice a
+  call site wants one of the two halves rather than the union.
+
+  This reverses a judgement made during 1.8.0, where `root_cause/1` was kept on the grounds that
+  `cause(root_error(e))` returns `nil` for a chain ending in an Errata error and could be misread
+  as "no cause". That argument only holds under the model this deprecation drops: once the chain is
+  described as errors with an optional foreign original, `nil` there means "no foreign original",
+  which is unsurprising.
+
+  The guides now lead with `root_error/1` and state the chain model in one sentence.
+
 ## [1.8.0] - 2026-08-24
 
 ### Added
