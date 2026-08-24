@@ -54,7 +54,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   otherwise. Which to reach for follows from that: `root_cause/1` diagnoses *what failed*, and is
   what a developer wants in a log; `root_error/1` is the deepest thing that still carries Errata's
   structure, and is what you hand to a view, a reporter, or a retry decision. `root_error/1` always
-  returns an Errata error, so a caller never has to check what it got.
+  returns an Errata error, so a caller never has to check what it got, where `root_cause/1` may
+  return either and leaves that to the caller.
+
+  They are not two views of the same fact. `wrap/2` keeps the cause in `:cause` and copies nothing
+  out of it — a wrapped error's `:reason` and `:context` are untouched by what it wraps — so the two
+  answers can be entirely different sentences, and neither is recoverable from the other's fields.
 
   This came out of the boundary recipe added below. Written against `root_cause/1`, the recipe's
   consumer module needed a three-clause `case` — with a clause-order trap, since an Errata error is

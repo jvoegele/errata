@@ -676,6 +676,15 @@ defmodule Errata do
   When a wrapped cause is itself an Errata error carrying its own cause, the
   chain is followed to the bottom.
 
+  **This is the diagnostic accessor**, for logs, tests, and answering "what
+  actually failed". What comes back may be an Errata error or a foreign value —
+  a bare atom, an `{:error, reason}` tuple, a standard exception — so a caller
+  that intends to *act* on it has to work out which it got. When you mean to
+  render, report or classify, reach for `root_error/1` instead, which always
+  returns an Errata error. For a log, `format_chain/1` is usually better than
+  either: it shows the whole chain, including the cause's stacktrace, which no
+  accessor exposes.
+
       iex> alias MyApp.Orders.{OrderNotFound, PaymentDeclined}
       iex> require OrderNotFound
       iex> require PaymentDeclined
