@@ -66,6 +66,134 @@ Caused by: ** (RuntimeError) the database connection dropped
     (stdlib 5.2) ...
 ```
 
+## Unwrapping a wrapped error
+
+Wrapping is worth doing because the outer error names *what your code was trying
+to do*. That is exactly why the outer message is often the least useful thing to
+show someone:
+
+```elixir
+iex> require Errata
+iex> alias MyApp.Http.RetriesExhausted
+iex> error = Errata.wrap(RetriesExhausted, %RuntimeError{message: "connection refused"})
+iex> Errata.display_message(error)
+"the request could not be completed after 3 attempts"
+```
+
+"After 3 attempts" describes the retry handler's reaction. `"connection refused"`
+is the thing that actually went wrong, and it is one call away:
+
+```elixir
+iex> require Errata
+iex> alias MyApp.Http.RetriesExhausted
+iex> error = Errata.wrap(RetriesExhausted, %RuntimeError{message: "connection refused"})
+iex> Errata.root_cause(error)
+%RuntimeError{message: "connection refused"}
+```
+
+`root_cause/1` follows the chain all the way down, however many layers deep the
+original failure is.
+
+### Two things to know before you use it
+
+**It returns `nil` when there is no cause**, rather than the error itself:
+
+```elixir
+iex> alias MyApp.Orders.OrderNotFound
+iex> Errata.root_cause(OrderNotFound.new(reason: :not_found))
+nil
+```
+
+`nil` answers the question `root_cause/1` asks: there is no cause. It is rarely
+what a *call site* wants, though — "show the most actionable failure you have"
+means falling back to the error in hand when there is nothing underneath it:
+
+```elixir
+iex> alias MyApp.Orders.OrderNotFound
+iex> error = OrderNotFound.new(reason: :not_found)
+iex> Errata.display_message(Errata.root_cause(error) || error)
+"the requested order does not exist"
+```
+
+`Errata.root_cause(error) || error` is the form to reach for.
+
+**It raises on a value that is not an Errata error**, like every accessor:
+
+```elixir
+iex> Errata.root_cause(:timeout)
+** (ArgumentError) expected an Errata error, got: :timeout
+```
+
+A consumer handling whatever a `with` chain returned does not necessarily have
+one. Normalize first, and the two compose:
+
+```elixir
+iex> value = :timeout
+iex> error = Errata.to_error(value)
+iex> Errata.root_cause(error) || error
+:timeout
+```
+
+### A consumer that only reads errors
+
+Putting those together — a module that classifies and renders errors, without
+creating any:
+
+```elixir
+defmodule MyAppWeb.ErrorHelpers do
+  require Errata
+
+  def user_message(value) do
+    error = Errata.to_error(value)
+
+    case Errata.root_cause(error) do
+      cause when Errata.is_error(cause) -> Errata.display_message(cause)
+      %{__exception__: true} = exception -> Exception.message(exception)
+      _no_cause_or_plain_term -> Errata.display_message(error)
+    end
+  end
+end
+```
+
+Two details in that `case` are worth copying rather than rediscovering.
+
+**Clause order matters.** An Errata error *is* an exception, so with the
+`is_error/1` clause second, an `OrderNotFound` cause would match
+`%{__exception__: true}` and render as:
+
+```elixir
+iex> alias MyApp.Orders.OrderNotFound
+iex> Exception.message(OrderNotFound.new(reason: :not_found))
+"the requested order does not exist: :not_found"
+```
+
+— the developer message, reason suffix and all, on a screen someone is reading.
+
+**The last clause covers two cases at once**: `root_cause/1` returned `nil`, or it
+returned a plain term with no message of its own. `Errata.to_error/2` produces the
+second whenever it wraps a bare value:
+
+```elixir
+iex> Errata.root_cause(Errata.to_error(:timeout))
+:timeout
+```
+
+`:timeout` is not something to show a person, so the outer error's message wins
+there even though it is less specific.
+
+Note the `require Errata`. The guards are **defguards**, so a module needs it
+even to call them fully qualified — and a module like this one has no reason to
+`use Errata`, which is how most examples in these guides pick the requirement up
+without showing it. Without the `require`, this fails to compile with:
+
+```
+you must require the module Errata before invoking macro Errata.is_error/1 inside a guard
+```
+
+For the logging side of the same question, reach for `Errata.format_chain/1`
+above rather than `root_cause/1` — a log wants the whole chain, where a person
+wants the one message that names the failure.
+
 ## Enriching context as an error propagates
 
 An error's `context` is usually captured where the error is created, but a

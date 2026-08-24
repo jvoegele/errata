@@ -63,6 +63,11 @@ that is not retryable — keeping the original as its cause, so nothing is
 discarded on the way through. Errata errors are returned unchanged, which makes
 the call safe to apply to something that may already be one.
 
+Pairing `to_error/2` with `root_cause/1` like this is the shape a consumer needs
+when the error in hand describes a handler's reaction rather than the failure —
+see
+[unwrapping a wrapped error](wrapping-errors.md#unwrapping-a-wrapped-error).
+
 ### Wrapping versus normalizing
 
 [`Errata.wrap/3`](wrapping-errors.md) also turns an arbitrary value into an
