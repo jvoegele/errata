@@ -159,6 +159,37 @@ Which to reach for follows from that:
     that still carries Errata's structure, so it is what you hand to a view, a
     reporter, or a retry decision.
 
+They are not two views of the same fact. `wrap/2` keeps the cause in `:cause`
+and copies nothing out of it, so the two answers can be entirely different
+sentences:
+
+```elixir
+iex> require Errata
+iex> alias MyApp.Http.RetriesExhausted
+iex> error = Errata.wrap(RetriesExhausted, %RuntimeError{message: "connection refused"})
+iex> Errata.display_message(Errata.root_error(error))
+"the request could not be completed after 3 attempts"
+iex> Errata.root_cause(error)
+%RuntimeError{message: "connection refused"}
+```
+
+Neither is recoverable from the other's fields — the wrapping error's `:reason`
+and `:context` are untouched by what it wraps:
+
+```elixir
+iex> require Errata
+iex> alias MyApp.Http.RetriesExhausted
+iex> error = Errata.wrap(RetriesExhausted, :econnrefused)
+iex> {Errata.reason(error), Errata.context(error)}
+{nil, %{}}
+```
+
+One caveat on `root_cause/1`, and it is why the pipeline below uses
+`root_error/1`: what it returns may be an Errata error *or* a foreign value,
+depending on how the chain ends. That is fine when you are about to `inspect/1`
+it or assert on it in a test. It means a branch when you intend to do anything
+else.
+
 ### A consumer that only reads errors
 
 Putting those together — a module that renders errors for people, without

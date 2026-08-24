@@ -370,6 +370,27 @@ defmodule ErrataTest do
       assert Errata.root_error(outer) == inner
     end
 
+    # The two accessors carry genuinely different facts: `wrap/2` keeps the cause
+    # in `:cause` and copies nothing out of it, so neither is recoverable from
+    # the other's fields. This is what makes root_cause/1 worth keeping alongside
+    # root_error/1 rather than folding the two together.
+    test "wrapping copies nothing from the cause into :reason or :context" do
+      error = OrderNotFound.wrap(:econnrefused, reason: :lookup_failed)
+
+      assert Errata.reason(error) == :lookup_failed
+      assert Errata.context(error) == %{}
+      assert Errata.root_cause(error) == :econnrefused
+    end
+
+    test "the root error's message and the root cause can be different sentences" do
+      error = OrderNotFound.wrap(%RuntimeError{message: "connection refused"})
+
+      assert Errata.display_message(Errata.root_error(error)) ==
+               "the requested order does not exist"
+
+      assert Errata.root_cause(error) == %RuntimeError{message: "connection refused"}
+    end
+
     test "always returns something with a classification on it" do
       # The point of the function: whatever the chain bottoms out in, what comes
       # back is an Errata error, so these never raise.
