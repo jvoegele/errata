@@ -35,6 +35,34 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   `guides/boundaries.md` now says so under a warning admonition, and shows selecting fields
   explicitly instead.
 
+- The cause chain now reaches `Errata.log/2` and `Errata.report/2` metadata, under two new keys.
+
+  Before this, **a Logger backend could not recover the cause at all.** `log/2` logs
+  `Exception.message/1`, which for a wrapped error is the outer message only — "the request could
+  not be completed after 3 attempts", with "connection refused" nowhere — and `log_metadata/1`
+  carried no cause key and no error struct. The single most useful operator fact was absent from
+  the library's own logging path, and `guides/observability.md` never mentioned the cause chain at
+  all. Telemetry fared better only by accident: its metadata includes the `:error` struct, so a
+  handler could dig the chain out itself.
+
+  Two keys, for two kinds of consumer:
+
+  - **`cause`** — the same nested map `to_map/1` emits, so a structured log formatter or a
+    telemetry handler gets every level of the chain with its own `code`, `context` and
+    classification. Redaction applies at each level, and a foreign exception, an
+    `{:error, reason}` tuple and a nested Errata error are all rendered for the consumer.
+  - **`caused_by`** — one greppable line naming the deepest failure, for a console reader or a
+    single log field: `"** (RuntimeError) connection refused"`.
+
+  Both are `nil` for an error with no cause. `caused_by` is deliberately **not** named
+  `root_cause`: `Errata.root_cause/1` returns the error itself when there is no cause, and a
+  metadata key that contradicted the function of the same name would be worse than a slightly
+  different word. `Exception.format_banner/2` is used for exceptions and `inspect/1` for plain
+  terms, since the former renders a bare atom as `"** (ErlangError) Erlang error: :econnrefused"`,
+  which buries the useful part.
+
+  Both keys are additive, so existing consumers of the `[:errata, :error]` metadata are unaffected.
+
 - `Errata.root_error/1`, the deepest **Errata error** in a cause chain.
 
   A cause chain is Errata errors all the way down, ending in at most one foreign value — a bare
