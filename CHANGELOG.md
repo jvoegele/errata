@@ -6,6 +6,68 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+- `Errata.to_map/2` takes an `:only` or `:except` projection, so one error can be serialized two
+  ways for its two audiences (#63).
+
+  ```elixir
+  Errata.to_map(error)                                        # the full record, for a reporter
+  Errata.to_map(error, except: [:env])                        # for a response body
+  Errata.to_map(error, only: [:code, :message, :retryable])   # narrower still
+  ```
+
+  `to_map/1` has always been a single serialization serving two consumers with opposite
+  requirements: an error reporter, which wants everything, and an HTTP response body, which should
+  carry as little as possible. It always included `:env` — which names the module, function, line,
+  and source file where the error was created — and the boundaries guide's fallback controller led
+  a reader straight into handing that to a client.
+
+  The projection **reaches aggregate members and a wrapped Errata cause**, so `except: [:env]`
+  removes every `:env` in the structure rather than only the outermost one; leaving members' `:env`
+  in place would be a trap of exactly the kind the option exists to remove. A cause that is a plain
+  exception rather than an Errata error is left alone, since it has no `:env` to drop and an
+  `:only` projection would mangle it. Keys are validated against the set `to_map/1` can produce, so
+  `except: [:envv]` raises rather than quietly selecting nothing.
+
+  The encoder protocols are unchanged and still emit the full map. `Jason.Encoder` takes no
+  options, and the reporting projection is the right default for what the protocols exist for —
+  but that means encoding an error struct directly at a client-facing boundary still emits `:env`.
+  `guides/boundaries.md` now says so under a warning admonition, and shows selecting fields
+  explicitly instead.
+
+- An application-wide fallback for types that declare no `:default_message` (#64):
+
+  ```elixir
+  config :errata, default_display_message: "an unexpected error occurred"
+  ```
+
+  `:default_message` is optional and the README presents the bare one-line definition as the normal
+  starting point, so a type rendering as `nil` through `display_message/1`, `to_map/1`, and the JSON
+  encoding is easy to reach — and `"error": null` in a response body is worse than a generic string.
+  The library's own design guide worked around it with a `|| "invalid request"` at the point of
+  use, which is the right advice but is one line every application repeats at every boundary.
+
+  Defaults to `nil`, so nothing changes until an application opts in. It applies only where the type
+  declares nothing and the caller passed no `:message` — a declared `:default_message` and a
+  per-error `:message` both win — and it is read at runtime, mirroring `config :errata, redact:`,
+  which is the closest existing analogue: a global floor that individual types refine. Because
+  `to_map/1` dispatches through the generated `display_message/1`, the fallback reaches the encoded
+  map too, which is precisely the consumer with no other source for a message. The developer
+  message (`Exception.message/1`) is unaffected.
+
+### Changed
+- The source path in a serialized error is now relative to the project root rather than absolute
+  (#63). `to_map(error).env.file` reads `lib/my_app/orders.ex` instead of naming the directory
+  layout of the machine that compiled the code — which in a release built on a developer machine
+  can include a username. The `Errata.Env` struct still holds the absolute path it was compiled
+  with; only what crosses the wire changes.
+
+  The root is captured when the error *type* is defined, which is during the using application's
+  compile, because it cannot be recovered at runtime — a release's working directory is the release
+  root, not the build tree. One consequence: if an application constructs an error type belonging to
+  a *library* directly, the roots differ and the path is emitted unchanged, as before. Errors a
+  library creates for itself, which is the ordinary case, are relative.
+
 ### Fixed
 - Unknown or misspelled `use` options are now a compile-time `ArgumentError` instead of being
   silently ignored (#62).

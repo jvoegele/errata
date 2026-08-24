@@ -45,7 +45,8 @@ defmodule MyAppWeb.FallbackController do
   import Errata
 
   # Safe to show the caller. `display_message/1` is `nil` for a type defined
-  # without `:default_message`, so give it a fallback.
+  # without `:default_message` and no `:default_display_message` configured, so
+  # give it a fallback.
   def call(conn, {:error, error}) when is_domain_error(error) do
     conn
     |> put_status(Errata.http_status(error))
