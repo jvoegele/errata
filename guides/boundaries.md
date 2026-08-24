@@ -498,6 +498,41 @@ This is a plain function rather than a template syntax, so it is just pattern
 matching: one clause per shape of context, with the compiler checking it and no
 separate interpolation language to learn.
 
+### One error, two surfaces
+
+`display_message/1` is the **surface-independent** phrasing: the words that hold
+wherever the error can be shown. That is worth deciding deliberately, because one
+error type usually surfaces in more than one place.
+
+Take an authentication failure from a third-party API. On a background transfer
+report, the connection has gone stale and the useful message is "reconnect to
+continue". The same error comes back from the *connect form*, where credentials
+are being entered for the first time — there is nothing to reconnect to, and the
+user is looking at the three fields they just typed. The right message there is
+about the fields.
+
+Neither phrasing is wrong; they answer different questions, and only the call site
+knows which one is being asked. So put the phrasing that holds everywhere in the
+type, and match on `Errata.reason/1` where a surface needs different words:
+
+```elixir
+def error_text(error) do
+  case Errata.reason(error) do
+    :unauthorized -> "Check your username and password and try again."
+    _ -> Errata.display_message(error)
+  end
+end
+```
+
+Pushing surface knowledge into the error type instead — a message-per-surface
+mechanism on the type — makes every error type depend on the set of places it can
+be rendered, which grows.
+
+The developer message is unaffected either way: `Exception.message/1` keeps
+combining `:message` and `:reason` for logs and raised output, whatever
+`display_message/1` does. See
+[rendering an error for users](#rendering-an-error-for-users) above.
+
 The developer message is deliberately unaffected by the override above:
 
 ```elixir

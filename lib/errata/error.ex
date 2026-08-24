@@ -160,6 +160,42 @@ defmodule Errata.Error do
         end
       end
 
+  ## The generated `t/0` type
+
+  Every generated error type gets a `t/0` type, but it is the **kind-level** type
+  rather than one naming the struct:
+
+      @type t() :: Errata.domain_error()
+
+  So every domain error type has a literally identical `t/0`, and a spec written as
+  `@spec refund(Order.t(), PaymentDeclined.t()) :: :ok` accepts *any* domain error.
+  To write a spec that names one error type, use the struct form instead:
+
+      @spec refund(Order.t(), %PaymentDeclined{}) :: :ok
+
+  This is the opposite of the usual Elixir convention, where `t/0` means "this
+  module's type", so it is worth knowing which of the two you are reaching for.
+
+  The `reason/0` type generated from `:reasons` *is* specific — it enumerates the
+  declared values — so a spec written against `PaymentDeclined.reason()` gets real
+  checking.
+
+  ## Dialyzer's `:extra_return` flag
+
+  The generated `http_status/1`, `code/1`, `severity/1` and `retryable?/1` carry
+  behaviour-level specs while their default bodies return a compile-time literal.
+  A type declaring `code: "ORDER_NOT_FOUND"` therefore has success typing
+  `<<_::176>>` against a spec that also admits `nil`, and one that never overrides
+  `retryable?/1` has success typing `false` against `boolean()`. With
+  `flags: [:extra_return]`, Dialyzer reports an `extra_range` warning for each,
+  and the count grows with every error type an application defines.
+
+  The specs state the contract rather than one implementation of it, and that is
+  deliberate: narrowing them per type would move the warning into user code the
+  moment someone overrides one of these functions, which is the extension point the
+  library is built around. **`:extra_return` is best left off in a project that uses
+  Errata.**
+
   """
 
   @typedoc """

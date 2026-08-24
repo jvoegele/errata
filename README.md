@@ -159,6 +159,30 @@ conforms to the `t:Errata.error/0` type, implements the `Errata.Error`
 behaviour, and provides `String.Chars` and `Jason.Encoder` implementations so
 that it can be rendered as a string or encoded as JSON automatically.
 
+> #### Define error types in compiled code {: .warning}
+>
+> Because those protocol implementations are consolidated when your project
+> compiles, an error type defined *after* consolidation gets none of them.
+> Defining one in a `.exs` script, an `iex` session, or inside a test module body
+> produces three "protocol has already been consolidated" warnings at compile
+> time and then, much later and somewhere else entirely:
+>
+> ```
+> ** (Protocol.UndefinedError) protocol String.Chars not implemented for %Bare{...}
+> ```
+>
+> This is ordinary Elixir behaviour rather than an Errata quirk, but Errata is
+> unusually exposed to it because `use Errata.Error` generates three protocol
+> implementations. The trap is also narrower than it first looks: only the
+> protocol paths are affected, so `Errata.to_map/1` and the accessors work on such
+> a type regardless.
+>
+> Define error types in `lib/`. In tests, either define fixture types at the **top
+> level of the test file**, above the test module, or set
+> `consolidate_protocols: Mix.env() != :test` in `mix.exs` — the first is local and
+> needs no project change, the second is one line and removes the trap for the
+> whole suite. This project does both.
+
 ## Creating errors as return values
 
 Returning an error as a value — preferably wrapped in an `{:error, error}`

@@ -224,9 +224,35 @@ PaymentDeclined.new(reason: :insufficient_funds)   # ok
 PaymentDeclined.new(reason: :mistyped)             # ** (ArgumentError) invalid reason :mistyped ...
 ```
 
-This turns the guidance above from a convention into something the compiler-adjacent
-tooling and your tests can enforce. If you also set `:default_reason`, it must be one
-of the declared `:reasons`.
+Declaring `:reasons` buys three things. Errata **raises on an undeclared reason when
+the error is built**, so a reason that drifts from the set cannot travel. It generates
+a real `reason/0` type enumerating the valid values —
+
+```elixir
+@type reason() :: :insufficient_funds | :fraud_suspected | :card_expired
+```
+
+— so the set is part of the type's documented contract and Dialyzer can check specs
+written against it. And it makes the type safe to decode at a boundary: `Errata.from_map/3`
+matches an incoming reason against the declared set, so nothing from the wire reaches
+`String.to_existing_atom/1` at all. That last one is the strongest argument for declaring
+them; see [Errors at a boundary](boundaries.md#what-a-decoded-error-is-and-is-not).
+
+**The reason check itself is at runtime.** An invalid reason written as a literal in
+source compiles without complaint and raises when that line runs:
+
+```elixir
+defmodule Checked do
+  use Errata.DomainError, reasons: [:a]
+  def go, do: __MODULE__.new(reason: :nope)   # compiles clean
+end
+
+Checked.go()
+# ** (ArgumentError) invalid reason :nope for Checked. Declared reasons are [:a].
+```
+
+If you also set `:default_reason`, it must be one of the declared `:reasons` — that one
+*is* checked at compile time, since both are `use` options.
 
 ## Why Errata?
 
