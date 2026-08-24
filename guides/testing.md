@@ -1,11 +1,12 @@
 # Testing with Errata
 
-Nothing here is a defect, and every trap has a workaround. But three of the five
-read as library bugs the first time you meet them, and this is the first
-substantial thing you do after defining an error type.
+An Errata error is a value, so testing one is mostly ordinary Elixir: build it,
+call the code, assert on what comes back. What follows is the handful of places
+where the obvious first attempt points somewhere other than the cause — where
+fixture types can live, how to get a readable diff out of a failed assertion,
+where redaction takes effect, and how to reach the telemetry and log seams.
 
-The examples below are pinned by `test/errata/testing_guide_test.exs`, so if one
-of them stops being true, this guide fails the build.
+Every example here is executed by `test/errata/testing_guide_test.exs`.
 
 ## Where to define fixture error types
 
@@ -41,9 +42,18 @@ Two fixes, and they are different trade-offs:
   * **Set `consolidate_protocols: Mix.env() != :test`** in `mix.exs`. One line,
     and it removes the trap for the whole suite. Errata does this too.
 
-The trap is narrower than it first appears: only the protocol paths break.
-`Errata.to_map/1` and every accessor work fine on a type defined in a test body,
-so if you are not calling `to_string/1` or an encoder you may never notice.
+Only the protocol paths are affected. Everything else works on a type defined in
+a test body, which is why this can go unnoticed for a while:
+
+```elixir
+error = InBody.new(reason: :x)
+
+Errata.reason(error)           #=> :x
+Errata.display_message(error)  #=> "boom"
+Errata.to_map(error).code      #=> "IN_BODY"
+
+to_string(error)               #=> ** (Protocol.UndefinedError)
+```
 
 ## Asserting on errors
 
@@ -114,13 +124,12 @@ Errata.context(error)            #=> %{password: "hunter2", user: "jane"}
 Errata.to_map(error).context     #=> %{password: "[REDACTED]", user: "jane"}
 ```
 
-Redaction applies **where the error leaves the process**, not at creation. That
-is the correct design — the error keeps the value in case the code that created
-it needs it — but someone writing a test to confirm their `:redact` option works
-will reach for `error.context` first, see the plaintext password, and conclude
-redaction is broken.
+Redaction applies **where the error leaves the process**, not at creation: the
+struct keeps the value, and `to_map/1` is what removes it. A test that reads
+`error.context` therefore sees the plaintext password, which looks exactly like
+proof that `:redact` is not working.
 
-So assert at the seam:
+Assert at the seam instead:
 
 ```elixir
 assert Errata.to_map(error).context == %{password: "[REDACTED]", user: "jane"}

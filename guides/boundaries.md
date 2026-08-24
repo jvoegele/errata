@@ -377,11 +377,10 @@ quietly selecting nothing.
 
 > #### The encoder protocols emit the full map {: .warning}
 >
-> `Jason.encode!/1` and `JSON.encode!/1` on an error struct produce `to_map/1`
-> — the reporting projection, `:env` included. That is right for the audience the
-> protocols exist for, but it means **`render("error.json", error: error)` handing
-> the struct straight to an encoder puts your source paths in the response body.**
-> At a client-facing boundary, select fields explicitly and encode the resulting
+> `Jason.encode!/1` and `JSON.encode!/1` on an error struct produce `to_map/1` —
+> the full record, `:env` included. So **`render("error.json", error: error)`
+> handing the struct straight to an encoder puts your source paths in the response
+> body.** At a client-facing boundary, select the fields and encode the resulting
 > map rather than the error.
 
 The source path that `to_map/1` does emit is relative to the project root of the
@@ -470,15 +469,22 @@ whole collection — the members' status when they agree, its own when they do n
 
 ### Why the fields are selected rather than handed over
 
-The obvious implementation of this view is `Errata.to_map(error)`, and it is
-wrong. That is the reporting projection: it carries `:env` — your module,
-function, and source line — plus `:context`, which may hold anything the error
-site put there, and `error_type`, a module name that moves when you move the
-module. None of those belong in a response body.
+The shorter implementation of this view is `Errata.to_map(error)`. Here is what
+that hands a client:
+
+```elixir
+iex> alias MyApp.Orders.OrderNotFound
+iex> OrderNotFound.new(reason: :not_found) |> Errata.to_map() |> Map.keys() |> Enum.sort()
+[:cause, :code, :context, :env, :error_type, :http_status, :kind, :message, :reason, :retryable, :severity]
+```
+
+`:env` is your module, function, and source line. `:context` is whatever the error
+site put there. `error_type` is a module name, which moves when you move the
+module — the reason [stable external codes](#stable-external-error-codes) exist.
 
 Naming the fields also means **adding a field to an error cannot silently widen
-your public API.** The list is the contract you are offering clients, so it should
-be written down somewhere, and the view is the natural place.
+your public API.** The list is the contract you are offering clients, so it is
+worth writing down somewhere, and the view is the natural place.
 
 ## Rebuilding an error from its encoded form
 
@@ -619,9 +625,9 @@ def error_text(error) do
 end
 ```
 
-Pushing surface knowledge into the error type instead — a message-per-surface
-mechanism on the type — makes every error type depend on the set of places it can
-be rendered, which grows.
+Kept the other way round, every error type would have to know the set of places it
+can be rendered — a set that grows with the application, and that the error site
+has no way to see.
 
 The developer message is unaffected either way: `Exception.message/1` keeps
 combining `:message` and `:reason` for logs and raised output, whatever

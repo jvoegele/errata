@@ -171,11 +171,10 @@ that it can be rendered as a string or encoded as JSON automatically.
 > ** (Protocol.UndefinedError) protocol String.Chars not implemented for %Bare{...}
 > ```
 >
-> This is ordinary Elixir behaviour rather than an Errata quirk, but Errata is
-> unusually exposed to it because `use Errata.Error` generates three protocol
-> implementations. The trap is also narrower than it first looks: only the
-> protocol paths are affected, so `Errata.to_map/1` and the accessors work on such
-> a type regardless.
+> Protocol implementations are consolidated when your project compiles, so a type
+> defined after that point gets none of the three. Only the protocol paths are
+> affected — `Errata.to_map/1` and the accessors work on such a type regardless —
+> which is why this can go unnoticed until something calls `to_string/1`.
 >
 > Define error types in `lib/`. In tests, either define fixture types at the **top
 > level of the test file**, above the test module, or set
