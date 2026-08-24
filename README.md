@@ -171,17 +171,18 @@ that it can be rendered as a string or encoded as JSON automatically.
 > ** (Protocol.UndefinedError) protocol String.Chars not implemented for %Bare{...}
 > ```
 >
-> This is ordinary Elixir behaviour rather than an Errata quirk, but Errata is
-> unusually exposed to it because `use Errata.Error` generates three protocol
-> implementations. The trap is also narrower than it first looks: only the
-> protocol paths are affected, so `Errata.to_map/1` and the accessors work on such
-> a type regardless.
+> Protocol implementations are consolidated when your project compiles, so a type
+> defined after that point gets none of the three. Only the protocol paths are
+> affected — `Errata.to_map/1` and the accessors work on such a type regardless —
+> which is why this can go unnoticed until something calls `to_string/1`.
 >
 > Define error types in `lib/`. In tests, either define fixture types at the **top
 > level of the test file**, above the test module, or set
 > `consolidate_protocols: Mix.env() != :test` in `mix.exs` — the first is local and
 > needs no project change, the second is one line and removes the trap for the
-> whole suite. This project does both.
+> whole suite. This project does both. See
+> [Testing with Errata](guides/testing.md) for this and the other things worth
+> knowing before writing the first test.
 
 ## Creating errors as return values
 
@@ -305,6 +306,9 @@ travels, converted where it leaves, reported:
     and rendering an error for a user.
   * **[Reporting errors](guides/observability.md)** — `Errata.log/2`,
     `Errata.report/2`, the telemetry contract, and redacting sensitive context.
+  * **[Testing with Errata](guides/testing.md)** — where fixture types must be
+    defined, asserting on errors readably, proving redaction works, and the
+    telemetry and log seams.
   * **[Design notes](guides/design.md)** — choosing a kind, choosing between an
     error type and a reason, and why Errata works the way it does.
 

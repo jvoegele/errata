@@ -96,3 +96,10 @@ to an existing app never silently changes what it logs. Declared and global keys
 compose. When a key list is not enough, override `redact_context/1`; see
 `Errata.Redaction`.
 
+## Testing what you have wired up
+
+`:telemetry_test` ships with the telemetry dependency Errata already requires, so
+asserting on the `[:errata, :error]` event needs nothing extra, and `capture_log/1`
+needs `metadata: :all` before the metadata that `log/2` exists for shows up. Both
+idioms are in [Testing with Errata](testing.md), along with the seam at which
+redaction has to be asserted.

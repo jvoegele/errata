@@ -190,11 +190,11 @@ defmodule Errata.Error do
   `flags: [:extra_return]`, Dialyzer reports an `extra_range` warning for each,
   and the count grows with every error type an application defines.
 
-  The specs state the contract rather than one implementation of it, and that is
-  deliberate: narrowing them per type would move the warning into user code the
-  moment someone overrides one of these functions, which is the extension point the
-  library is built around. **`:extra_return` is best left off in a project that uses
-  Errata.**
+  Narrowing the specs per type would trade this warning for a worse one: a type
+  declared `retryable: false` would get `@spec retryable?(...) :: false`, and the
+  first override returning `true` for a particular reason — the extension point
+  these functions exist for — would then be the thing Dialyzer flagged, in user
+  code. **`:extra_return` is best left off in a project that uses Errata.**
 
   """
 
