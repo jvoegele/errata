@@ -667,8 +667,11 @@ defmodule Errata do
   end
 
   @doc """
-  Walks the cause chain of `error` and returns the deepest (root) cause, or `nil`
-  if `error` has no cause.
+  Walks the cause chain of `error` and returns the deepest thing in it.
+
+  An error's chain always includes the error itself, so this always returns
+  something: for an error with no cause, the deepest thing in the chain *is* that
+  error. Use `cause/1` to ask whether an error has a cause at all.
 
   When a wrapped cause is itself an Errata error carrying its own cause, the
   chain is followed to the bottom.
@@ -682,13 +685,20 @@ defmodule Errata do
       iex> Errata.root_cause(outer)
       %RuntimeError{message: "db down"}
 
+  An error with no cause is its own root:
+
+      iex> alias MyApp.Orders.OrderNotFound
+      iex> error = OrderNotFound.new(reason: :not_found)
+      iex> Errata.root_cause(error) == error
+      true
+
   Raises an `ArgumentError` if `error` is not an Errata error.
   """
-  @spec root_cause(error()) :: term() | nil
+  @spec root_cause(error()) :: term()
   def root_cause(error) when is_error(error) do
     case cause(error) do
-      nil -> nil
-      value -> if is_error(value), do: root_cause(value) || value, else: value
+      nil -> error
+      value -> if is_error(value), do: root_cause(value), else: value
     end
   end
 

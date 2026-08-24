@@ -56,6 +56,51 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   message (`Exception.message/1`) is unaffected.
 
 ### Changed
+- **`Errata.root_cause/1` now returns the error itself when the error has no cause**, instead of
+  `nil` (#72). An error's chain includes the error, so the function is total: there is always a
+  deepest thing in the chain, and it is the error when nothing is underneath it.
+
+  ```elixir
+  error = OrderNotFound.new(reason: :not_found)
+
+  Errata.root_cause(error) == error   # was: nil
+  Errata.cause(error)                 #=> nil, unchanged
+  ```
+
+  The `nil` was doing a job `cause/1` already does, and doing it in place of its own. Three things
+  inside the library pointed the same way:
+
+  - **`format_chain/1` already includes the error itself** — it renders an uncaused error as a
+    one-element chain. `root_cause/1` was the one function that modelled the chain as causes-only.
+  - **`errors/1` already returns a total answer** (`[]` for a non-aggregate) precisely so that
+    "calling code never has to branch on whether it has an aggregate", which is how the guide
+    describes it. `root_cause/1` returning `nil` was the same decision made the other way.
+  - **`root_cause/1` could not be implemented without the workaround it asked users to write.** Its
+    recursive clause read `root_cause(value) || value`, because the recursive call returned `nil`
+    for an uncaused inner error. That `||` is now gone; the recursion is total.
+
+  A dogfooding application hand-wrote its own `root_cause/1` rather than using this one, and the
+  version it wrote returns the error itself — which is the behaviour the name leads people to
+  expect.
+
+  **Upgrading.** Code written the way the docs describe it — `Errata.root_cause(error) || error` —
+  keeps working unchanged, since `error || error` is `error`; the `|| error` can now be deleted.
+  What breaks, and breaks *quietly*, is code using the `nil` to detect the absence of a cause:
+
+  ```elixir
+  # Now always truthy — this branch is dead.
+  if Errata.root_cause(error), do: ..., else: ...
+
+  # The nil clause is now unreachable.
+  case Errata.root_cause(error) do
+    nil -> ...
+    cause -> ...
+  end
+  ```
+
+  Grep for `root_cause` near `if`, `case` or `nil`. In every such place the replacement is
+  `Errata.cause/1`, which answers that question directly and is unchanged.
+
 - The source path in a serialized error is now relative to the project root rather than absolute
   (#63). `to_map(error).env.file` reads `lib/my_app/orders.ex` instead of naming the directory
   layout of the machine that compiled the code — which in a release built on a developer machine

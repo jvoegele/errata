@@ -13,9 +13,9 @@ defmodule ErrataWrappingGuideTest.ErrorHelpers do
     error = Errata.to_error(value)
 
     case Errata.root_cause(error) do
-      cause when Errata.is_error(cause) -> Errata.display_message(cause)
+      root when Errata.is_error(root) -> Errata.display_message(root)
       %{__exception__: true} = exception -> Exception.message(exception)
-      _no_cause_or_plain_term -> Errata.display_message(error)
+      plain_term -> inspect(plain_term)
     end
   end
 end
@@ -30,8 +30,16 @@ defmodule ErrataWrappingGuideTest do
   alias MyApp.Orders.OrderNotFound
 
   describe "root_cause/1, as the recipe describes it" do
-    test "returns nil when there is no cause" do
-      assert Errata.root_cause(OrderNotFound.new(reason: :not_found)) == nil
+    test "an error with no cause is its own root" do
+      error = OrderNotFound.new(reason: :not_found)
+      assert Errata.root_cause(error) == error
+    end
+
+    test "cause/1 is the function that answers whether there is a cause" do
+      assert Errata.cause(OrderNotFound.new(reason: :not_found)) == nil
+
+      assert Errata.cause(Errata.wrap(OrderNotFound, %RuntimeError{message: "x"})) ==
+               %RuntimeError{message: "x"}
     end
 
     test "follows the chain to the bottom, however deep" do
@@ -48,8 +56,7 @@ defmodule ErrataWrappingGuideTest do
     end
 
     test "to_error/2 makes an arbitrary value safe to unwrap" do
-      error = Errata.to_error(:timeout)
-      assert (Errata.root_cause(error) || error) == :timeout
+      assert Errata.root_cause(Errata.to_error(:timeout)) == :timeout
     end
   end
 
@@ -74,15 +81,16 @@ defmodule ErrataWrappingGuideTest do
       refute ErrorHelpers.user_message(wrapped) =~ ":not_found"
     end
 
-    test "falls back to the outer message when there is no cause" do
+    test "an error with no cause renders its own display message" do
+      # No fallback clause involved: root_cause/1 returns the error itself, which
+      # the is_error/1 clause handles like any other root.
       assert ErrorHelpers.user_message(OrderNotFound.new(reason: :not_found)) ==
                "the requested order does not exist"
     end
 
-    test "falls back to the outer message for a plain-term cause" do
-      # `to_error(:timeout)` gives an UnknownError whose cause is the bare atom —
-      # not something to show a person, so the outer message wins.
-      assert ErrorHelpers.user_message(:timeout) == "an unexpected error occurred"
+    test "a plain-term cause reaches the last clause" do
+      # `to_error(:timeout)` gives an UnknownError whose cause is the bare atom.
+      assert ErrorHelpers.user_message(:timeout) == ":timeout"
     end
   end
 end
