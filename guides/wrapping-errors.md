@@ -104,9 +104,9 @@ iex> Errata.root_cause(OrderNotFound.new(reason: :not_found))
 nil
 ```
 
-That is the truthful answer to the question `root_cause/1` asks — there is no
-cause — but it is rarely the answer a *call site* wants. "Show the most
-actionable failure you have" means falling back to the error in hand:
+`nil` answers the question `root_cause/1` asks: there is no cause. It is rarely
+what a *call site* wants, though — "show the most actionable failure you have"
+means falling back to the error in hand when there is nothing underneath it:
 
 ```elixir
 iex> alias MyApp.Orders.OrderNotFound
@@ -155,14 +155,31 @@ defmodule MyAppWeb.ErrorHelpers do
 end
 ```
 
-Two details in that `case` are worth copying rather than rediscovering. **Clause
-order matters**: an Errata error *is* an exception, so the `is_error/1` clause has
-to come first or every cause would render through `Exception.message/1` — the
-developer message, reason suffix and all. And the **last clause covers two cases
-at once**: `root_cause/1` returned `nil`, or it returned a plain term like
-`:timeout` that has no message of its own. That is the `|| error` fallback, put
-where it is actually right — a bare atom is not something to show a person, so
-the outer error's message is the better answer even though it is less specific.
+Two details in that `case` are worth copying rather than rediscovering.
+
+**Clause order matters.** An Errata error *is* an exception, so with the
+`is_error/1` clause second, an `OrderNotFound` cause would match
+`%{__exception__: true}` and render as:
+
+```elixir
+iex> alias MyApp.Orders.OrderNotFound
+iex> Exception.message(OrderNotFound.new(reason: :not_found))
+"the requested order does not exist: :not_found"
+```
+
+— the developer message, reason suffix and all, on a screen someone is reading.
+
+**The last clause covers two cases at once**: `root_cause/1` returned `nil`, or it
+returned a plain term with no message of its own. `Errata.to_error/2` produces the
+second whenever it wraps a bare value:
+
+```elixir
+iex> Errata.root_cause(Errata.to_error(:timeout))
+:timeout
+```
+
+`:timeout` is not something to show a person, so the outer error's message wins
+there even though it is less specific.
 
 Note the `require Errata`. The guards are **defguards**, so a module needs it
 even to call them fully qualified — and a module like this one has no reason to
