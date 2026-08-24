@@ -64,6 +64,10 @@ defmodule MyAppWeb.FallbackController do
 end
 ```
 
+The bodies are inlined here to keep the branching in view; a real boundary renders
+through a view instead, and
+[a worked boundary](boundaries.md#a-worked-boundary-end-to-end) shows one in full.
+
 ### Making the choice
 
 The most reliable question is not whose fault the error is, but **who acts on

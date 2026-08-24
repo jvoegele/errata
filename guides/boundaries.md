@@ -34,7 +34,10 @@ end
 ```
 
 This keeps Errata free of any web-framework dependency: it hands you the status
-code, and the framework glue stays in your application.
+code, and the framework glue stays in your application. The view this renders
+through is shown in full under
+[a worked boundary](#a-worked-boundary-end-to-end), along with the response
+bodies it produces.
 
 ## Errors that aren't Errata errors
 
@@ -384,6 +387,98 @@ quietly selecting nothing.
 The source path that `to_map/1` does emit is relative to the project root of the
 application that defined the error type, so it reads `lib/my_app/orders.ex:29`
 rather than naming the directory layout of the machine that built the release.
+
+## A worked boundary, end to end
+
+The pieces above appear separately throughout this guide. Here they are together,
+which is the only place all of the decisions have to be made at once. Errata stays
+free of any web-framework dependency, so the glue below is application code — but
+it is the same glue in every application, so here it is.
+
+### The view
+
+```elixir
+defmodule MyAppWeb.ErrorJSON do
+  @client_fields [:code, :message, :retryable, :errors]
+
+  def render("error.json", %{error: error}) do
+    Errata.to_map(error, only: @client_fields)
+  end
+end
+```
+
+That is the whole view. A single-error response:
+
+```elixir
+iex> alias MyApp.Orders.OrderNotFound
+iex> Errata.to_map(OrderNotFound.new(reason: :not_found), only: [:code, :message, :retryable, :errors])
+%{code: "ORDER_NOT_FOUND", message: "the requested order does not exist", retryable: false}
+```
+
+and a validation response, from the same call with no branching:
+
+```elixir
+iex> alias MyApp.Orders.{ValidationFailed, EmailInvalid, PostcodeRequired}
+iex> invalid = ValidationFailed.new(errors: [EmailInvalid.new(), PostcodeRequired.new()])
+iex> Errata.to_map(invalid, only: [:code, :message, :retryable, :errors])
+%{
+  code: "VALIDATION_FAILED",
+  message: "the order could not be validated",
+  retryable: false,
+  errors: [
+    %{code: "EMAIL_INVALID", message: "email is not a valid address", retryable: false},
+    %{code: "POSTCODE_REQUIRED", message: "postcode is required", retryable: false}
+  ]
+}
+```
+
+Two properties are doing the work. The projection **recurses into members**, so
+each one is rendered by the same rule as the top-level error — including its own
+`code`, which is what a client matches on. And `:errors` is simply **absent** for
+a type that is not an aggregate, so the single clause covers both shapes without
+asking which one it has.
+
+### The controller
+
+```elixir
+defmodule MyAppWeb.FallbackController do
+  use Phoenix.Controller
+
+  def call(conn, {:error, value}) do
+    error = MyApp.Errors.to_error(value)
+
+    Errata.log(error)
+
+    conn
+    |> put_status(Errata.http_status(error))
+    |> put_view(MyAppWeb.ErrorJSON)
+    |> render("error.json", error: error)
+  end
+end
+```
+
+`MyApp.Errors.to_error/1` is the funnel from
+[classifying the types you recognize](#classifying-the-types-you-recognize) — it
+turns an `Ecto.Changeset`, a `{:error, :timeout}`, or anything else the boundary
+meets into an Errata error, so everything below it can assume one. `Errata.log/2`
+with no level logs at the error's own `severity/1`, so a `:warning`-severity
+domain error does not page anyone; see [Reporting errors](observability.md) for
+the telemetry side.
+
+The status comes from `Errata.http_status/1`, and an aggregate answers it for the
+whole collection — the members' status when they agree, its own when they do not.
+
+### Why the fields are selected rather than handed over
+
+The obvious implementation of this view is `Errata.to_map(error)`, and it is
+wrong. That is the reporting projection: it carries `:env` — your module,
+function, and source line — plus `:context`, which may hold anything the error
+site put there, and `error_type`, a module name that moves when you move the
+module. None of those belong in a response body.
+
+Naming the fields also means **adding a field to an error cannot silently widen
+your public API.** The list is the contract you are offering clients, so it should
+be written down somewhere, and the view is the natural place.
 
 ## Rebuilding an error from its encoded form
 
