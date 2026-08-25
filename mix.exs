@@ -55,7 +55,20 @@ defmodule Errata.MixProject do
   defp package do
     [
       name: :errata,
-      files: ["lib", "mix.exs", "README.md", "LICENSE", "CHANGELOG.md"],
+      # `guides` ships because the README links into it a dozen times; without it those
+      # links are dead for anyone reading the package from Hex rather than GitHub.
+      # `usage-rules.md` is agent-facing guidance, consumed by `usage_rules`
+      # (https://hex.pm/packages/usage_rules); it must be listed or `mix usage_rules.sync`
+      # finds nothing.
+      files: [
+        "lib",
+        "guides",
+        "usage-rules.md",
+        "mix.exs",
+        "README.md",
+        "LICENSE",
+        "CHANGELOG.md"
+      ],
       maintainers: ["Jason Voegele"],
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => @source_url}
