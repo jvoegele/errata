@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+- **`usage-rules.md`, shipped in the package** — Errata's guidance condensed for AI coding agents,
+  in the layout [`usage_rules`](https://hex.pm/packages/usage_rules) syncs from. A consumer can
+  pull it into their `AGENTS.md` with `mix usage_rules.sync`, or read it at
+  `deps/errata/usage-rules.md`.
+
+  It leads with the trap that costs the most time because it fails furthest from its cause —
+  **define error types in compiled code**, since the generated `String.Chars` and JSON protocol
+  implementations are consolidated when your project compiles — then `create/2` vs `new/1`, the
+  cause chain, and the boundary rules. Two things it states explicitly that the guides leave
+  implicit: every accessor raises `ArgumentError` on a non-Errata value, which matters because the
+  boundary where you ask is the boundary where foreign error shapes arrive; and
+  `to_error({:error, :timeout})` does not unwrap the tuple.
+
+### Fixed
+- **`guides` is now included in the package.** The `files:` list was
+  `["lib", "mix.exs", "README.md", "LICENSE", "CHANGELOG.md"]` while the README links into
+  `guides/` twelve times, so every one of those links was dead for anyone reading the package from
+  Hex rather than from GitHub. Present since the docs were tiered in 1.5.0. HexDocs was never
+  affected, since `mix hex.publish` builds docs from the working tree.
+
 ### Deprecated
 - **`Errata.root_cause/1`.** Use `root_error/1`, or `cause/1` on it to reach the foreign original.
   The function still works and will until 2.0; calling it now produces a compiler warning naming
