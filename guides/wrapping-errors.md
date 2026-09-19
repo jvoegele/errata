@@ -273,3 +273,7 @@ deliberate: the merge rules are defined in terms of `severity/1`, `retryable?/1`
 and `http_status/1`, which a bare map or a foreign exception cannot answer. Wrap
 a foreign error in an Errata type first — that is what `Errata.wrap/3` is for.
 
+---
+
+**Previous:** [Handling errors](handling-errors.md) ·
+**Next:** [Errors at a boundary](boundaries.md)

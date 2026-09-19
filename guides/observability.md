@@ -159,3 +159,8 @@ asserting on the `[:errata, :error]` event needs nothing extra, and `capture_log
 needs `metadata: :all` before the metadata that `log/2` exists for shows up. Both
 idioms are in [Testing with Errata](testing.md), along with the seam at which
 redaction has to be asserted.
+
+---
+
+**Previous:** [Errors at a boundary](boundaries.md) ·
+**Next:** [Testing with Errata](testing.md)

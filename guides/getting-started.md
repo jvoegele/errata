@@ -186,3 +186,7 @@ of logs and JSON.
     a reason, and why Errata works the way it does.
   * **[Errata and AI coding agents](ai-coding-agents.md)** — getting the rules
     this package ships in front of your agent.
+
+---
+
+**Next:** [Handling errors](handling-errors.md)

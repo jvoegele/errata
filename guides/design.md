@@ -288,3 +288,7 @@ Chris Keathley discusses this point in depth in his blog post
 [Good and Bad Elixir](https://keathley.io/blog/good-and-bad-elixir.html), under
 "Avoid `else` in `with` blocks".
 
+---
+
+**Previous:** [Testing with Errata](testing.md) ·
+**Next:** [Errata and AI coding agents](ai-coding-agents.md)

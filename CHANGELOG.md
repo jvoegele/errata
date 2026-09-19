@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - **The documentation is organised into Guides and Reference**, replacing a single regex-matched
   Guides group, with the guides ordered as a reading path and the agent-facing rules kept out of
   it, since they are for lookup.
+- **The guides are now a chain**: each one ends with links to the previous and next guide, so the
+  reading path — created, handled, composed as it travels, converted where it leaves, reported,
+  then testing, design, and the agent rules — is followable from inside a guide rather than only
+  from the sidebar. The README's Guides list gained the two new guides and says the order is
+  deliberate.
 - The install pin in `usage-rules.md` said `~> 1.8`; it now matches the README at `~> 1.9`.
 
 ### Fixed

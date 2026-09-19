@@ -655,3 +655,7 @@ specifics stay queryable in the metadata that `Errata.log/2` attaches. If you do
 want the computed detail in the developer message too, override `message/1` as
 well — that one applies to `Exception.message/1`, `to_string/1`, and `raise`.
 
+---
+
+**Previous:** [Wrapping and composing errors](wrapping-errors.md) ·
+**Next:** [Reporting errors](observability.md)

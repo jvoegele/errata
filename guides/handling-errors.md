@@ -150,3 +150,7 @@ iex> case {:error, OrderNotFound.new(reason: :not_found)} do
 > 1.20. Earlier versions of this guide suggested `Map.fetch!/2` for that case;
 > that workaround is not needed.
 
+---
+
+**Previous:** [Getting started](getting-started.md) ·
+**Next:** [Wrapping and composing errors](wrapping-errors.md)

@@ -212,3 +212,8 @@ end
 Not the display message. Given how carefully the two renderings are kept apart
 elsewhere, this is easy to guess wrong — see
 [rendering an error for users](boundaries.md#rendering-an-error-for-users).
+
+---
+
+**Previous:** [Reporting errors](observability.md) ·
+**Next:** [Design notes](design.md)

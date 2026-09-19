@@ -291,9 +291,13 @@ raise MyApp.Orders.OrderNotFound, reason: :not_found, context: %{order_id: 42}
 ## Guides
 
 The sections above are the whole of what most applications need. The guides
-cover the rest, and follow the life of an error — handled, composed as it
-travels, converted where it leaves, reported:
+cover the rest, and read well in order — they follow the life of an error:
+created, handled, composed as it travels, converted where it leaves, reported.
+Each one links to the next.
 
+  * **[Getting started](https://hexdocs.pm/errata/getting-started.html)** —
+    installation through to your first error type, returned as a value and
+    raised as an exception. Start here.
   * **[Handling errors](https://hexdocs.pm/errata/handling-errors.html)** — the guards, `use Errata`,
     and matching on errors as values versus rescuing them as exceptions.
   * **[Wrapping and composing errors](https://hexdocs.pm/errata/wrapping-errors.html)** — wrapping a
@@ -311,6 +315,9 @@ travels, converted where it leaves, reported:
     telemetry and log seams.
   * **[Design notes](https://hexdocs.pm/errata/design.html)** — choosing a kind, choosing between an
     error type and a reason, and why Errata works the way it does.
+  * **[Errata and AI coding agents](https://hexdocs.pm/errata/ai-coding-agents.html)** — getting the
+    rules this package ships in front of your agent, with or without
+    [`usage_rules`](https://hex.pm/packages/usage_rules).
 
 <!-- README END -->
 

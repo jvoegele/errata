@@ -135,3 +135,8 @@ to your own instruction file:
   * **What your boundary already does.** If you have a fallback controller or an
     error view that reads `:http_status` and `:code`, an agent should set those
     on new types instead of adding another `case`.
+
+---
+
+**Previous:** [Design notes](design.md) ·
+**Next:** [Usage rules](usage-rules.md)
