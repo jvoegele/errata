@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Documentation links on the hex.pm package page went to raw Markdown rather than HexDocs.**
+  hex.pm renders a package README with every *relative* link rewritten to the tarball preview, so
+  each of the six guides the README's Guides section points at landed the reader on
+  `https://repo.hex.pm/preview/errata/1.9.0/guides/handling-errors.md`, unrendered Markdown,
+  rather than on the guide. Guide links in the README are now absolute HexDocs URLs, which hex.pm
+  leaves alone, and the `Errata` moduledoc strips the prefix back off as it slices the README, so
+  ExDoc still resolves them within the version being browsed and still warns if an extra goes
+  missing. Documentation only; no API or behavioural changes.
+
 ## [1.9.0] - 2026-08-25
 
 ### Added

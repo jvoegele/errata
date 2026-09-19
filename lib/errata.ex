@@ -1,11 +1,19 @@
 defmodule Errata do
-  # Pull in the moduledocs from the demarcated section of the README file
+  # Pull in the moduledocs from the demarcated section of the README file.
+  #
+  # Guide links in the README are absolute HexDocs URLs, because hex.pm renders a package README
+  # with every *relative* link rewritten to the raw-markdown tarball preview
+  # (https://repo.hex.pm/preview/...) rather than to the guide. Stripping the prefix here turns
+  # each one back into a plain `handling-errors.html` link, which ExDoc resolves within the
+  # version being browsed and warns about if the extra is missing — so the README serves hex.pm
+  # and GitHub, and the moduledoc serves HexDocs, from one source.
   @external_resource Path.expand("./README.md")
   @moduledoc File.read!(Path.expand("./README.md"))
              |> String.split("<!-- README START -->")
              |> Enum.at(1)
              |> String.split("<!-- README END -->")
              |> List.first()
+             |> String.replace("https://hexdocs.pm/errata/", "")
 
   require Logger
 

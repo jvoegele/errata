@@ -108,7 +108,7 @@ Every Errata error has a _kind_, fixed when the type is defined:
 An error's **kind** decides how a boundary treats it; its **type** decides how
 your domain logic behaves. For how to choose between them, what each kind
 defaults to, and how to opt out of the taxonomy entirely, see the
-[design notes](guides/design.md).
+[design notes](https://hexdocs.pm/errata/design.html).
 
 ## Defining custom error types
 
@@ -149,9 +149,9 @@ The rest are classifications consumed at a boundary — `:http_status`, `:code`,
 `:severity`, `:retryable` — plus `:reasons` (declare the valid reasons for the
 type), `:redact` (keep sensitive context out of logs and JSON), and `:aggregate`
 (a type that holds several errors at once). See
-[Errors at a boundary](guides/boundaries.md),
-[Reporting errors](guides/observability.md), and
-[Wrapping and composing errors](guides/wrapping-errors.md), or
+[Errors at a boundary](https://hexdocs.pm/errata/boundaries.html),
+[Reporting errors](https://hexdocs.pm/errata/observability.html), and
+[Wrapping and composing errors](https://hexdocs.pm/errata/wrapping-errors.html), or
 `Errata.Error` for the full reference.
 
 Whichever module you use, the resulting error type is an exception struct that
@@ -181,7 +181,7 @@ that it can be rendered as a string or encoded as JSON automatically.
 > `consolidate_protocols: Mix.env() != :test` in `mix.exs` — the first is local and
 > needs no project change, the second is one line and removes the trap for the
 > whole suite. This project does both. See
-> [Testing with Errata](guides/testing.md) for this and the other things worth
+> [Testing with Errata](https://hexdocs.pm/errata/testing.html) for this and the other things worth
 > knowing before writing the first test.
 
 ## Creating errors as return values
@@ -211,7 +211,7 @@ true
 ```
 
 In a real module, write `use Errata` rather than `require Errata` — it does the
-same `require` and brings the [guards](guides/handling-errors.md) into scope at the same
+same `require` and brings the [guards](https://hexdocs.pm/errata/handling-errors.html) into scope at the same
 time:
 
 ```elixir
@@ -294,22 +294,22 @@ The sections above are the whole of what most applications need. The guides
 cover the rest, and follow the life of an error — handled, composed as it
 travels, converted where it leaves, reported:
 
-  * **[Handling errors](guides/handling-errors.md)** — the guards, `use Errata`,
+  * **[Handling errors](https://hexdocs.pm/errata/handling-errors.html)** — the guards, `use Errata`,
     and matching on errors as values versus rescuing them as exceptions.
-  * **[Wrapping and composing errors](guides/wrapping-errors.md)** — wrapping a
+  * **[Wrapping and composing errors](https://hexdocs.pm/errata/wrapping-errors.html)** — wrapping a
     lower-level failure as a `:cause`, enriching context as an error propagates,
     and aggregate errors that carry several errors at once.
-  * **[Errors at a boundary](guides/boundaries.md)** — HTTP status codes, stable
+  * **[Errors at a boundary](https://hexdocs.pm/errata/boundaries.html)** — HTTP status codes, stable
     external codes, severity and retryability, normalizing errors your
     application did not define (and when that differs from wrapping), carrying
     an error's classification across the wire and rebuilding it on the far side,
     and rendering an error for a user.
-  * **[Reporting errors](guides/observability.md)** — `Errata.log/2`,
+  * **[Reporting errors](https://hexdocs.pm/errata/observability.html)** — `Errata.log/2`,
     `Errata.report/2`, the telemetry contract, and redacting sensitive context.
-  * **[Testing with Errata](guides/testing.md)** — where fixture types must be
+  * **[Testing with Errata](https://hexdocs.pm/errata/testing.html)** — where fixture types must be
     defined, asserting on errors readably, proving redaction works, and the
     telemetry and log seams.
-  * **[Design notes](guides/design.md)** — choosing a kind, choosing between an
+  * **[Design notes](https://hexdocs.pm/errata/design.html)** — choosing a kind, choosing between an
     error type and a reason, and why Errata works the way it does.
 
 <!-- README END -->
