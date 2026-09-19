@@ -10,7 +10,7 @@ Taken together, an application's error types are a named catalogue of the ways i
 
 ```elixir
 # mix.exs
-{:errata, "~> 1.8"}
+{:errata, "~> 1.9"}
 ```
 
 JSON encoding needs no configuration: on Elixir 1.18+ every error type implements the built-in

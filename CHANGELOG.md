@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+- **A [Getting started](guides/getting-started.md) guide, which is now the HexDocs landing page.**
+  Installation was the one thing the published documentation did not have: the `## Installation`
+  section sits *below* the `<!-- README END -->` marker, so it was excluded from the `Errata`
+  moduledoc — which was the landing page. A reader arriving at hexdocs.pm/errata was shown the
+  error kinds and the creation macros without ever being told the dependency line. The new guide
+  runs from `mix deps.get` through defining a first error type, returning it, raising it, handling
+  it, and getting it out at a boundary.
+- **An [Errata and AI coding agents](guides/ai-coding-agents.md) guide, and `usage-rules.md` is now
+  published on HexDocs.** The rules have shipped in the package since 1.9.0, but nothing explained
+  how to wire them into a project, and a reader could not see what their agent was being told
+  without digging into `deps/`. Both are fixed: the guide covers `usage_rules` setup and the manual
+  route, and the rules themselves are an extra under Reference.
+
+### Changed
+- **The documentation is organised into Guides and Reference**, replacing a single regex-matched
+  Guides group, with the guides ordered as a reading path and the agent-facing rules kept out of
+  it, since they are for lookup.
+- The install pin in `usage-rules.md` said `~> 1.8`; it now matches the README at `~> 1.9`.
+
 ### Fixed
 - **Documentation links on the hex.pm package page went to raw Markdown rather than HexDocs.**
   hex.pm renders a package README with every *relative* link rewritten to the tarball preview, so
