@@ -71,14 +71,15 @@ Every option is optional:
 | Option | Purpose |
 | --- | --- |
 | `:default_message` / `:default_reason` | used when none is given |
-| `:reasons` | declare the valid reasons — compile-time validated, and the basis of atom safety in `from_map/3` |
+| `:reasons` | declare the valid reasons — an undeclared reason raises when the error is built, and the declared set is the basis of atom safety in `from_map/3` |
 | `:http_status`, `:code`, `:severity`, `:retryable` | classifications consumed at a boundary |
 | `:redact` | keep sensitive context out of logs and JSON |
 | `:aggregate` | a type that carries several errors at once |
 
-Declaring `:reasons` is worth doing by default. It catches typos at compile time, generates a
-`reason/0` type, and is what makes decoding an error from the wire safe — a declared set turns
-decoding into a lookup, so nothing from outside is ever atomised.
+Declaring `:reasons` is worth doing by default. It turns a mistyped reason into an `ArgumentError`
+where the error is built (the check is at runtime; only a `:default_reason` outside the set is a
+compile error), generates a `reason/0` type, and is what makes decoding an error from the wire
+safe — a declared set turns decoding into a lookup, so nothing from outside is ever atomised.
 
 ## Creating errors
 
@@ -190,8 +191,9 @@ if Errata.retryable?(error), do: {:snooze, 60}, else: give_up(error)
 
 ### `display_message/1` returns `nil` when there is no message to show
 
-Specifically, when the type declares no `:default_message` and none was given — verified on 1.8.0.
-So call sites generally need a fallback: `Errata.display_message(e) || Exception.message(e)`.
+Specifically, when the type declares no `:default_message`, none was given, and no
+`config :errata, default_display_message:` is set. So call sites generally need a fallback:
+`Errata.display_message(e) || Exception.message(e)`.
 
 Note also that `display_message/1` is written for one audience at a time. The same error may want
 different phrasing in a background report and on the form the user is staring at — special-casing
@@ -242,9 +244,10 @@ and then ships it to Logger, telemetry and JSON.
 
 ## Two things that will surprise you
 
-**Structural guards are invisible to the Elixir type checker.** `is_error/1` matches on struct
-shape, which does not refine a struct type, so `e.reason` after a bare `rescue` or guard warns on
-1.18+. Use the accessors (`Errata.reason(e)`) or `Map.fetch!(e, :reason)`.
+**A bare `rescue` binding has no type the checker can narrow.** `e.reason` after `rescue e ->`
+draws an `unknown key` warning on Elixir 1.18+ — for any exception, not only an Errata one. Use the
+accessors there (`Errata.reason(e)`). Field access after a structural guard
+(`{:error, e} when Errata.is_error(e)`) is warning-free.
 
 **Dialyzer's `:extra_return` flag is unusable in an Errata application.** Generated accessors are
 specced to the behaviour's contract, not to one implementation — `code/1` is `String.t() | nil`

@@ -42,11 +42,11 @@ later, without being edited.
 ```elixir
 defmodule MyAppWeb.FallbackController do
   use Phoenix.Controller
-  import Errata
+  use Errata
 
   # Safe to show the caller. `display_message/1` is `nil` for a type defined
-  # without `:default_message` and no `:default_display_message` configured, so
-  # give it a fallback.
+  # without `:default_message` when no `:default_display_message` is configured,
+  # so give it a fallback.
   def call(conn, {:error, error}) when is_domain_error(error) do
     conn
     |> put_status(Errata.http_status(error))

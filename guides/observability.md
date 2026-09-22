@@ -59,17 +59,14 @@ in metadata, in two shapes for two kinds of consumer:
     reader or a single log field.
 
 ```elixir
-error = Errata.wrap(RetriesExhausted, %RuntimeError{message: "connection refused"})
+error = Errata.wrap(MyApp.Http.RetriesExhausted, %RuntimeError{message: "connection refused"})
 
 # in a Logger backend or a telemetry handler:
 metadata.caused_by   #=> "** (RuntimeError) connection refused"
 metadata.cause       #=> %{error_type: "RuntimeError", message: "connection refused"}
 ```
 
-Both are `nil` for an error with no cause. Note that `caused_by` is *not* named
-`root_cause`: `Errata.root_cause/1` returns the error itself when there is no
-cause, and a metadata key that contradicted the function of the same name would
-be worse than a slightly different word.
+Both are `nil` for an error with no cause.
 
 Neither key requires the handler to know what kind of thing the cause is — a
 foreign exception, an `{:error, reason}` tuple and a nested Errata error are all
@@ -91,13 +88,15 @@ it shows each level and the original stacktrace, where `Errata.log/2` logs the
 outer error's message with the chain in metadata.
 
 The one place a handler still has to look at *types* is a reporter that wants an
-exception rather than a map — `Sentry.capture_exception/2`, say. Which one you
-want is an application decision, so pick it explicitly:
+exception rather than a map — `Sentry.capture_exception/2`, say. An Errata error
+is itself an exception, so the choice is between the error in hand and the
+foreign original at the bottom of its chain, when there is one and it is an
+exception. Which you want is an application decision, so pick it explicitly:
 
 ```elixir
-case Errata.root_cause(error) do
-  %{__exception__: true} = exception -> Sentry.capture_exception(exception, extra: Errata.to_map(error))
-  _plain_term -> Sentry.capture_message(Exception.message(error), extra: Errata.to_map(error))
+case Errata.root_error(error) |> Errata.cause() do
+  %{__exception__: true} = original -> Sentry.capture_exception(original, extra: Errata.to_map(error))
+  _ -> Sentry.capture_exception(error, extra: Errata.to_map(error))
 end
 ```
 

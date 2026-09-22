@@ -52,15 +52,16 @@ With Errata you can:
 ## Quick start
 
 ```elixir
-# Define a domain error. Errata generates the exception struct, the
-# `Errata.Error` behaviour, and the String.Chars and Jason.Encoder protocols.
+# Define a domain error. Errata generates the exception struct, an
+# implementation of the `Errata.Error` behaviour, and the String.Chars and
+# JSON encoder protocol implementations.
 defmodule MyApp.Orders.OrderNotFound do
   use Errata.DomainError,
     default_message: "the requested order does not exist"
 end
 
 defmodule MyApp.Orders do
-  require Errata
+  use Errata
 
   # Return the error as a value, capturing the reason, some context, and the
   # point of origin (via `Errata.create/2`).
@@ -112,10 +113,9 @@ defaults to, and how to opt out of the taxonomy entirely, see the
 
 ## Defining custom error types
 
-Most errors in an application are either domain errors or infrastructure errors,
-so Errata provides a dedicated module for each. Prefer these two when defining
-custom error types: they make the classification explicit and let domain and
-infrastructure errors be identified throughout the system.
+Prefer `Errata.DomainError` and `Errata.InfrastructureError` when defining
+custom error types: they make the classification explicit, and the `Errata`
+guards can then act on it anywhere in the system.
 
 ```elixir
 defmodule MyApp.Orders.PaymentDeclined do
@@ -140,7 +140,8 @@ defmodule MyApp.UnexpectedError do
 end
 ```
 
-Every option is optional. The two you are likely to reach for first:
+`use Errata.DomainError` and friends take options, every one of them optional.
+The two you are likely to reach for first:
 
   * `:default_message` — the `:message` to use when none is given
   * `:default_reason` — the `:reason` to use when none is given
@@ -156,8 +157,9 @@ type), `:redact` (keep sensitive context out of logs and JSON), and `:aggregate`
 
 Whichever module you use, the resulting error type is an exception struct that
 conforms to the `t:Errata.error/0` type, implements the `Errata.Error`
-behaviour, and provides `String.Chars` and `Jason.Encoder` implementations so
-that it can be rendered as a string or encoded as JSON automatically.
+behaviour, and provides `String.Chars` and JSON encoder implementations
+(`JSON.Encoder` on Elixir 1.18+, `Jason.Encoder` when Jason is present) so that
+it can be rendered as a string or encoded as JSON automatically.
 
 > #### Define error types in compiled code {: .warning}
 >
@@ -171,10 +173,9 @@ that it can be rendered as a string or encoded as JSON automatically.
 > ** (Protocol.UndefinedError) protocol String.Chars not implemented for %Bare{...}
 > ```
 >
-> Protocol implementations are consolidated when your project compiles, so a type
-> defined after that point gets none of the three. Only the protocol paths are
-> affected — `Errata.to_map/1` and the accessors work on such a type regardless —
-> which is why this can go unnoticed until something calls `to_string/1`.
+> Only the protocol paths are affected — `Errata.to_map/1` and accessor
+> functions such as `Errata.reason/1` work on such a type regardless — which is
+> why this can go unnoticed until something calls `to_string/1`.
 >
 > Define error types in `lib/`. In tests, either define fixture types at the **top
 > level of the test file**, above the test module, or set
@@ -197,8 +198,8 @@ and in whether they record where the error came from.
 
 **`Errata.create/2` is the one to reach for by default.** It captures the current
 `__ENV__` and stacktrace into the `:env` field, and because it takes the error
-type as an argument, a single `use Errata` covers every error type the module
-creates — there is no per-type `require`:
+type as an argument, a single `require Errata` covers every error type the
+module creates — there is no per-type `require`:
 
 ```elixir
 iex> require Errata
@@ -210,9 +211,12 @@ iex> match?(%Errata.Env{}, error.env)
 true
 ```
 
-In a real module, write `use Errata` rather than `require Errata` — it does the
-same `require` and brings the [guards](https://hexdocs.pm/errata/handling-errors.html) into scope at the same
-time:
+In a real module, write `use Errata` rather than `require Errata`. It is the one
+setup line for any module that touches Errata errors: it imports the
+[guards](https://hexdocs.pm/errata/handling-errors.html), and because `import`
+implies `require`, the creation macros come along with it — at no cost to a
+module that never calls a guard, since Elixir does not warn about an unused
+import that a macro generated:
 
 ```elixir
 defmodule MyApp.Orders do

@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **A documentation audit, read as an application developer would.** Every guide, the README, the
+  usage rules and the module docs were reviewed together for reading order, duplication and
+  contradictions. The substantive corrections:
+  - The deprecated `Errata.root_cause/1` was still recommended in three places — the wrapping guide,
+    the reporting guide's Sentry example, and the `root_error/1` docs themselves. All three now use
+    `root_error/1` and `cause/1`.
+  - The usage rules and the agents guide claimed `:reasons` is validated at compile time and that
+    reading `e.reason` after an `is_error/1` guard warns under the Elixir type checker. Neither is
+    so: an undeclared reason raises when the error is built (only `:default_reason` is checked at
+    compile time), and field access after a structural guard is warning-free — only a bare
+    `rescue` binding warns. Both now say what the design guide and the handling guide already said.
+  - `Errata.log/2` and `Errata.report/2` document the `:cause` and `:caused_by` metadata they attach.
+  - `Errata.display_message/1` documents that `config :errata, default_display_message:` is what
+    fills in for a missing message, and the boundaries guide now covers the `nil` case and that
+    setting where it explains rendering for users.
+  - `Errata.UnknownError` referred to an `Errata.Convertible` protocol that does not exist.
+- **`use Errata` is documented as the one setup line for any module that touches Errata errors,
+  described from the guards outward.** Creation macros need only a `require`, which `use Errata`
+  provides as a consequence of importing the guards; the getting-started guide, README, handling
+  guide, wrapping guide and module docs say that in the same way, and every module example uses
+  `use Errata` rather than a mix of `require Errata` and `import Errata`. The handling guide also
+  notes the one real difference from an explicit `import Errata, only: [...]`: Elixir warns about
+  that import when unused, but not about the one `use Errata` generates.
+- **The boundaries guide's "Rendering an error for users" section, with "Dynamic messages" and
+  "One error, two surfaces" beneath it, now precedes serialization and the worked boundary**, so
+  every per-type classification is covered before the example that reads them all. Two paragraphs
+  that said the same thing about the developer message were merged.
+- Smaller fixes: the wrapping guide leads with `Errata.wrap/3` as the default the way the rest of
+  the docs lead with `Errata.create/2`; the testing guide's in-body fixture example declares the
+  `code` its output shows; the raising example in `Errata.Error` no longer uses a `require` that
+  `raise/2` does not need; "generates the `Errata.Error` behaviour" reads "generates an
+  implementation of" it; JSON encoder wording is consistent across the README.
+
 ## [1.9.2] - 2026-09-22
 
 ### Fixed

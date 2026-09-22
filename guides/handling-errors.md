@@ -27,20 +27,25 @@ end
 qualified (`Errata.to_map/1`, `Errata.put_context/3`, and so on), which reads
 well at a boundary and avoids pulling generically named functions into your
 namespace. (Don't confuse it with `use Errata.Error` and friends, which _define_
-a new error type.) If you'd rather not `use` the module, the equivalent explicit
-form imports just the guards — which, again, also requires the module:
+a new error type.) If you'd rather not `use` the module, the explicit form
+imports just the guards — which, again, also requires the module:
 
 ```elixir
 import Errata, only: [is_error: 1, is_domain_error: 1, is_infrastructure_error: 1]
 ```
 
+The two differ in one respect. Elixir warns about an unused `import` written out
+like this, but not about one a macro generated, so a module that only creates
+errors and never calls a guard compiles cleanly with `use Errata` and warns with
+the explicit import. That is why `use Errata` is the recommended setup line for
+every module that touches Errata errors — whether it creates them, handles them,
+or both — and the explicit form suits a module that does call the guards and
+prefers to say so.
+
 The kind-based guards are especially useful at system boundaries — for example,
 translating domain errors into client errors (`4xx`) and infrastructure errors
 into server errors (`5xx`) with alerting — while domain logic generally matches
 on the specific error type.
-
-The following example handles Errata errors both as raised exceptions and as
-error values returned from functions:
 
 > #### `rescue` clauses and the custom guards {: .info}
 >
@@ -51,10 +56,12 @@ error values returned from functions:
 > as shown below. The guards _can_ be used directly in the `when` clause of a
 > `case`, `with`, or function head when handling errors returned as values.
 
+The following example handles Errata errors both as raised exceptions and as
+error values returned from functions:
+
 ```elixir
 defmodule MyApp.Orders.Boundary do
-  # require the Errata module to use the custom guards
-  require Errata
+  use Errata
 
   def handle_order_lookup_as_exception(id) do
     try do
@@ -66,10 +73,9 @@ defmodule MyApp.Orders.Boundary do
 
       e ->
         # `rescue` clauses cannot use `when` guards, so rescue the exception
-        # and then dispatch on it using the custom guards defined in the
-        # Errata module
+        # and then dispatch on it using the guards
         cond do
-          Errata.is_error(e) -> handle_errata_error(e)
+          is_error(e) -> handle_errata_error(e)
           # Regular exceptions may be handled separately if desired
           true -> handle_other_error(e)
         end
@@ -85,9 +91,9 @@ defmodule MyApp.Orders.Boundary do
         # Errata errors can be pattern matched by their specific type
         handle_order_not_found(error)
 
-      {:error, error} when Errata.is_error(error) ->
-        # Or they can be identified using one of the custom guards defined in
-        # the Errata module (`when` guards are allowed in `case` clauses)
+      {:error, error} when is_error(error) ->
+        # Or they can be identified using one of the guards (`when` guards are
+        # allowed in `case` clauses)
         handle_errata_error(error)
 
       {:error, reason} ->
@@ -147,8 +153,7 @@ iex> case {:error, OrderNotFound.new(reason: :not_found)} do
 >
 > Field access after a *structural guard* (`{:error, e} when Errata.is_error(e)`)
 > is warning-free — verified on every Elixir this library supports, 1.15 through
-> 1.20. Earlier versions of this guide suggested `Map.fetch!/2` for that case;
-> that workaround is not needed.
+> 1.20.
 
 ---
 

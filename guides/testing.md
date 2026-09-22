@@ -15,7 +15,7 @@ An error type defined inside a test body fails, in a default `mix new` project:
 ```elixir
 test "error type defined in a test body" do
   defmodule InBody do
-    use Errata.DomainError, default_message: "boom"
+    use Errata.DomainError, default_message: "boom", code: "IN_BODY"
   end
 
   to_string(InBody.new(reason: :x))

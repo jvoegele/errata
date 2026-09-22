@@ -12,7 +12,9 @@ defmodule Errata.UnknownError do
   HTTP status `500`, severity `:error`, and not retryable. That is the honest
   classification for a value nothing knows anything about — if a more specific
   classification is possible, the value is not really unknown, and the way to
-  say so is an `Errata.Convertible` implementation or the `:fallback` option.
+  say so is a clause of your own that recognizes the value (see
+  [Errors at a boundary](guides/boundaries.md#classifying-the-types-you-recognize))
+  or the `:fallback` option.
 
       iex> error = Errata.to_error(:enoent)
       iex> error.__struct__

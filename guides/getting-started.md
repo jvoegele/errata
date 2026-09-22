@@ -67,28 +67,18 @@ failures, and the like. `Errata.Error` is the base, for anything that fits
 neither. Prefer the first two: they make the classification explicit, and the
 `Errata` guards can then act on it anywhere in the system.
 
-That one line generates the exception struct, the `Errata.Error` behaviour, and
-the `String.Chars` and JSON protocol implementations.
-
-> #### Define error types in `lib/` {: .warning}
->
-> This is the trap that costs the most time, because it fails far from its
-> cause. Protocol implementations are consolidated when your project compiles,
-> so an error type defined *after* that point — in a `.exs` script, an `iex`
-> session, or inside a test module body — gets none of them. You get three
-> "protocol has already been consolidated" warnings at compile time, and then,
-> much later and somewhere else entirely, a `Protocol.UndefinedError` from
-> something as innocent as `to_string/1`.
->
-> Define error types in `lib/`. In tests, define fixture types at the **top
-> level of the test file**, above the test module, or set
-> `consolidate_protocols: Mix.env() != :test` in `mix.exs`. See
-> [Testing with Errata](testing.md).
+That one line generates the exception struct, an implementation of the
+`Errata.Error` behaviour, and the `String.Chars` and JSON encoder protocol
+implementations.
 
 ## Return it as a value
 
-Add `use Errata` to the module that creates errors. It requires `Errata` (the
-creation macros need it) and imports the three guards at the same time:
+`Errata.create/2` is a macro, so the module calling it needs `require Errata`.
+The recommended line is `use Errata`, the one setup line for any module that
+touches Errata errors: it imports the three guards (covered below), and because
+`import` implies `require`, the creation macros come along with it. Elixir does
+not warn about an unused import that a macro generated, so a module that never
+calls a guard pays nothing for them:
 
 ```elixir
 defmodule MyApp.Orders do
@@ -106,8 +96,8 @@ end
 
 `Errata.create/2` is the one to reach for by default. It is a macro, which is
 what lets it capture `__ENV__` and the stacktrace into the error's `:env` field,
-and because it takes the type as an argument, a single `use Errata` covers every
-error type the module creates.
+and because it takes the type as an argument, a single `require Errata` (which
+`use Errata` provides) covers every error type the module creates.
 
 Two variants exist for when that does not fit. `OrderNotFound.create/1` does the
 same thing and reads better when a module works mostly with one type, but being
@@ -141,9 +131,10 @@ def handle({:error, e}) when is_error(e), do: report(e)
 def handle({:error, other}), do: report_unknown(other)
 ```
 
-Guard first. The accessors raise on a value that is not an Errata error, so a
-pipeline that assumes every `{:error, _}` holds one will fail on the first
-foreign error it meets. `Errata.to_error/2` is the other way round: it converts
+Guard first. Errata's accessor functions — `Errata.reason/1`,
+`Errata.context/1`, `Errata.http_status/1`, and the rest — raise on a value that
+is not an Errata error, so a pipeline that assumes every `{:error, _}` holds one
+will fail on the first foreign error it meets. `Errata.to_error/2` is the other way round: it converts
 whatever it is handed into an Errata error, letting you normalise once and treat
 everything uniformly after that.
 

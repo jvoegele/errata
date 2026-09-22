@@ -119,10 +119,11 @@ defmodule Errata.Error do
   > approach is more explicit and allows for easier identification of domain errors and
   > infrastructure errors within an application.
 
-  To create instances of the error--to use as an error return value from a function, say--the
+  To create instances of the error — to use as an error return value from a function, say — the
   recommended path is `Errata.create/2`, which captures the current `__ENV__` and stacktrace into
-  the `:env` field. Because it takes the error type as an argument, a single `use Errata` covers
-  every error type the module creates, with no per-type `require`:
+  the `:env` field. Because it takes the error type as an argument, a single `require Errata` covers
+  every error type the module creates, with no per-type `require` — and `use Errata`, the usual
+  setup line, does that `require` as a consequence of importing the guards:
 
       defmodule MyApp.SomeModule do
         use Errata
@@ -150,10 +151,10 @@ defmodule Errata.Error do
   when that is the right choice.
 
   To raise errors as exceptions, simply use `raise/2` passing extra params as the second argument
-  if desired:
+  if desired. `raise/2` is not a macro on the error module, so no `require` is needed:
 
       defmodule MyApp.SomeModule do
-        require MyApp.UnexpectedError, as: UnexpectedError
+        alias MyApp.UnexpectedError
 
         def some_function!(arg) do
           raise UnexpectedError, reason: :unexpected, context: %{arg: arg}
@@ -214,7 +215,7 @@ defmodule Errata.Error do
   @type param :: :message | :reason | :context | :cause
 
   @typedoc """
-  Type to represent allowable values to be passes as params for creating error structs.
+  Type to represent allowable values to be passed as params for creating error structs.
 
   This effectively allows for using either a map or keyword list with allowable keys defined by
   `t:param/0`.

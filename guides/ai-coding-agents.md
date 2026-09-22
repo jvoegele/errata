@@ -27,21 +27,20 @@ were written:
     raise on a value that is not an Errata error, so a handler that assumes
     every `{:error, _}` holds one dies on the first foreign error. The rules
     give both shapes — guard first, or normalise first with `Errata.to_error/2`.
-  * **Reading `e.reason` directly after a guard.** `is_error/1` matches on
-    struct shape, which does not refine a struct type, so the Elixir type
-    checker warns on 1.18+. The fix is the accessor, and an agent will not guess
-    it.
+  * **Reading `e.reason` inside a bare `rescue`.** A variable bound by
+    `rescue e ->` has no type the compiler can narrow, so the Elixir type
+    checker warns on 1.18+ — for any exception, not only an Errata one. The fix
+    is the accessor, and an agent will not guess it.
   * **Using `new/1` where `create/2` belongs.** Both build the error; only
     `create/2` captures the module, function, line, and stacktrace. Code written
     with `new/1` throughout works perfectly and quietly throws away the most
     useful thing an error has.
 
-They are versioned with the library, so they stay right as it changes.
-
 ## What ships in the package
 
 One file, at `deps/errata/usage-rules.md` after `mix deps.get` — about 11 KB.
-Nothing to download separately.
+Nothing to download separately, and because the rules are versioned with the
+library, they stay right as it changes.
 
 It covers setup and `use Errata`; Rule 0; defining a type and choosing a kind;
 the three ways to create an error; the cause chain and `Errata.wrap/3`; handling

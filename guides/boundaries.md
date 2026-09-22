@@ -63,11 +63,11 @@ that is not retryable — keeping the original as its cause, so nothing is
 discarded on the way through. Errata errors are returned unchanged, which makes
 the call safe to apply to something that may already be one.
 
-Pairing `to_error/2` with the cause chain like this is the shape a consumer needs
-when the error in hand describes a handler's reaction rather than the failure.
-Note which end of the chain you want: `Errata.cause/1` gives you the foreign
-original, which here is the bare `:timeout`, while `Errata.root_error/1` gives
-you the deepest thing that still carries a code and a context. See
+The result composes with the cause-chain accessors, so a boundary can normalize
+once and then ask for whichever end of the chain it wants: `Errata.cause/1`
+gives the foreign original, which here is the bare `:timeout`, while
+`Errata.root_error/1` gives the deepest error that still carries a code and a
+context. See
 [unwrapping a wrapped error](wrapping-errors.md#unwrapping-a-wrapped-error).
 
 ### Wrapping versus normalizing
@@ -282,6 +282,107 @@ case do_work() do
     result
 end
 ```
+
+## Rendering an error for users
+
+`Exception.message/1` (and the `String.Chars` implementation) return a
+_developer-oriented_ message that combines the `:message` and `:reason` (for
+example, `"the requested order does not exist: :not_found"`) — useful in logs
+and raised-exception output. When rendering an error for an end user, use
+`Errata.display_message/1` instead, which returns just the human-readable
+`:message`.
+
+For a type that declares no `:default_message`, and an error created without
+one, that is `nil`, so a boundary rendering arbitrary errors needs a fallback —
+`Errata.display_message(error) || "something went wrong"`. To give every such
+type the same floor rather than repeating the fallback at each boundary, set an
+application-wide default:
+
+```elixir
+config :errata, default_display_message: "an unexpected error occurred"
+```
+
+### Dynamic messages
+
+A static `:default_message` cannot name the thing that went wrong — it can say
+"the item is out of stock" but not _which_ item. Rather than building the string
+by hand at every call site, override the generated `display_message/1` to compute
+it from the error's `:reason` or `:context`, once, where the type is defined:
+
+```elixir
+defmodule MyApp.Orders.ItemOutOfStock do
+  use Errata.DomainError, default_message: "the item is out of stock"
+
+  def display_message(%{context: %{sku: sku, available: available}}),
+    do: "only #{available} of #{sku} left in stock"
+
+  def display_message(error), do: error.message
+end
+```
+
+`Errata.display_message/1` and `Errata.to_map/1` both dispatch through it, so the
+computed message reaches the JSON encoding and anything else rendering the error
+for a user. Keep a final clause returning `error.message` so the type still has a
+sensible message when the context it wants is absent:
+
+```elixir
+iex> alias MyApp.Orders.ItemOutOfStock
+iex> error = ItemOutOfStock.new(reason: :insufficient_stock, context: %{sku: "ABC-1", available: 2})
+iex> Errata.display_message(error)
+"only 2 of ABC-1 left in stock"
+iex> Errata.to_map(error).message
+"only 2 of ABC-1 left in stock"
+iex> Errata.display_message(ItemOutOfStock.new(reason: :insufficient_stock))
+"the item is out of stock"
+```
+
+This is a plain function rather than a template syntax, so it is just pattern
+matching: one clause per shape of context, with the compiler checking it and no
+separate interpolation language to learn.
+
+The developer message is deliberately unaffected by the override:
+
+```elixir
+iex> alias MyApp.Orders.ItemOutOfStock
+iex> error = ItemOutOfStock.new(reason: :insufficient_stock, context: %{sku: "ABC-1", available: 2})
+iex> Exception.message(error)
+"the item is out of stock: :insufficient_stock"
+```
+
+Logs and raised-exception output keep the stable, greppable message while the
+specifics stay queryable in the metadata that `Errata.log/2` attaches. If you do
+want the computed detail in the developer message too, override `message/1` as
+well — that one applies to `Exception.message/1`, `to_string/1`, and `raise`.
+
+### One error, two surfaces
+
+`display_message/1` is the **surface-independent** phrasing: the words that hold
+wherever the error can be shown. That is worth deciding deliberately, because one
+error type usually surfaces in more than one place.
+
+Take an authentication failure from a third-party API. On a background transfer
+report, the connection has gone stale and the useful message is "reconnect to
+continue". The same error comes back from the *connect form*, where credentials
+are being entered for the first time — there is nothing to reconnect to, and the
+user is looking at the three fields they just typed. The right message there is
+about the fields.
+
+Neither phrasing is wrong; they answer different questions, and only the call site
+knows which one is being asked. So put the phrasing that holds everywhere in the
+type, and match on `Errata.reason/1` where a surface needs different words:
+
+```elixir
+def error_text(error) do
+  case Errata.reason(error) do
+    :unauthorized -> "Check your username and password and try again."
+    _ -> Errata.display_message(error)
+  end
+end
+```
+
+Kept the other way round, every error type would have to know the set of places it
+can be rendered — a set that grows with the application, and that the error site
+has no way to see.
 
 ## Carrying the classification across the wire
 
@@ -558,102 +659,6 @@ iex> Errata.from_map(MyApp.Orders.PaymentRejected, %{"reason" => "timeout"})
 
 `:timeout` is a perfectly ordinary atom in any running system; it is refused
 here because it is not one of *this type's* reasons.
-
-## Rendering an error for users
-
-`Exception.message/1` (and the `String.Chars` implementation) return a
-_developer-oriented_ message that combines the `:message` and `:reason` (for
-example, `"the requested order does not exist: :not_found"`) — useful in logs
-and raised-exception output. When rendering an error for an end user, use
-`Errata.display_message/1` instead, which returns just the human-readable
-`:message`.
-
-## Dynamic messages
-
-A static `:default_message` cannot name the thing that went wrong — it can say
-"the item is out of stock" but not _which_ item. Rather than building the string
-by hand at every call site, override the generated `display_message/1` to compute
-it from the error's `:reason` or `:context`, once, where the type is defined:
-
-```elixir
-defmodule MyApp.Orders.ItemOutOfStock do
-  use Errata.DomainError, default_message: "the item is out of stock"
-
-  def display_message(%{context: %{sku: sku, available: available}}),
-    do: "only #{available} of #{sku} left in stock"
-
-  def display_message(error), do: error.message
-end
-```
-
-`Errata.display_message/1` and `Errata.to_map/1` both dispatch through it, so the
-computed message reaches the JSON encoding and anything else rendering the error
-for a user. Keep a final clause returning `error.message` so the type still has a
-sensible message when the context it wants is absent:
-
-```elixir
-iex> alias MyApp.Orders.ItemOutOfStock
-iex> error = ItemOutOfStock.new(reason: :insufficient_stock, context: %{sku: "ABC-1", available: 2})
-iex> Errata.display_message(error)
-"only 2 of ABC-1 left in stock"
-iex> Errata.to_map(error).message
-"only 2 of ABC-1 left in stock"
-iex> Errata.display_message(ItemOutOfStock.new(reason: :insufficient_stock))
-"the item is out of stock"
-```
-
-This is a plain function rather than a template syntax, so it is just pattern
-matching: one clause per shape of context, with the compiler checking it and no
-separate interpolation language to learn.
-
-### One error, two surfaces
-
-`display_message/1` is the **surface-independent** phrasing: the words that hold
-wherever the error can be shown. That is worth deciding deliberately, because one
-error type usually surfaces in more than one place.
-
-Take an authentication failure from a third-party API. On a background transfer
-report, the connection has gone stale and the useful message is "reconnect to
-continue". The same error comes back from the *connect form*, where credentials
-are being entered for the first time — there is nothing to reconnect to, and the
-user is looking at the three fields they just typed. The right message there is
-about the fields.
-
-Neither phrasing is wrong; they answer different questions, and only the call site
-knows which one is being asked. So put the phrasing that holds everywhere in the
-type, and match on `Errata.reason/1` where a surface needs different words:
-
-```elixir
-def error_text(error) do
-  case Errata.reason(error) do
-    :unauthorized -> "Check your username and password and try again."
-    _ -> Errata.display_message(error)
-  end
-end
-```
-
-Kept the other way round, every error type would have to know the set of places it
-can be rendered — a set that grows with the application, and that the error site
-has no way to see.
-
-The developer message is unaffected either way: `Exception.message/1` keeps
-combining `:message` and `:reason` for logs and raised output, whatever
-`display_message/1` does. See
-[rendering an error for users](#rendering-an-error-for-users) above.
-
-The developer message is deliberately unaffected by the override above:
-
-```elixir
-iex> alias MyApp.Orders.ItemOutOfStock
-iex> error = ItemOutOfStock.new(reason: :insufficient_stock, context: %{sku: "ABC-1", available: 2})
-iex> Exception.message(error)
-"the item is out of stock: :insufficient_stock"
-```
-
-Logs and raised-exception output keep the stable, greppable message while the
-specifics stay queryable in the metadata that `Errata.log/2` attaches. If you do
-want the computed detail in the developer message too, override `message/1` as
-well — that one applies to `Exception.message/1`, `to_string/1`, and `raise`.
 
 ---
 

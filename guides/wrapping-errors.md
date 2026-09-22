@@ -8,20 +8,23 @@ errors at once. This guide covers all three.
 
 When a lower-level subsystem or external library fails, you often want to
 translate that failure into a structured Errata error of your own — without
-discarding the original. The generated `wrap/2` macro does exactly this: it
-creates an error (capturing the current `__ENV__`, like `create/1`) and stores
-the original error, exception, or value as its `:cause`.
+discarding the original. `Errata.wrap/3` does exactly this: it creates an error
+of the given type (capturing the current `__ENV__`, like `Errata.create/2`) and
+stores the original error, exception, or value as its `:cause`. Like `create/2`
+it is a macro, and the `use Errata` line a module already has for creating
+errors is all the setup it needs.
 
 The typical use is inside a `rescue` clause, passing `__STACKTRACE__` so the
 original error's point of failure is preserved alongside it:
 
 ```elixir
-iex> require MyApp.Orders.OrderNotFound, as: OrderNotFound
+iex> require Errata
+iex> alias MyApp.Orders.OrderNotFound
 iex> error =
 ...>   try do
 ...>     raise "the database connection dropped"
 ...>   rescue
-...>     e -> OrderNotFound.wrap(e, stacktrace: __STACKTRACE__, reason: :lookup_failed)
+...>     e -> Errata.wrap(OrderNotFound, e, stacktrace: __STACKTRACE__, reason: :lookup_failed)
 ...>   end
 iex> error.reason
 :lookup_failed
@@ -29,15 +32,13 @@ iex> Errata.cause(error)
 %RuntimeError{message: "the database connection dropped"}
 ```
 
-Like `create/1`, the `wrap/2` macro must be `require`d for each error module. The
-`Errata.wrap/3` macro is the convenient alternative — it wraps a cause in an error
-of _any_ type without a separate `require` for each one. Since you typically
-already `require Errata`, you can `alias` your error modules and call it directly:
+Each error module also has a generated `wrap/2` macro that does the same thing
+for its own type. As with `create/1`, it reads a little more directly in a module
+that works mostly with one type, and it needs a `require` for that module:
 
 ```elixir
-iex> require Errata
-iex> alias MyApp.Orders.OrderNotFound
-iex> error = Errata.wrap(OrderNotFound, %RuntimeError{message: "boom"}, reason: :lookup_failed)
+iex> require MyApp.Orders.OrderNotFound, as: OrderNotFound
+iex> error = OrderNotFound.wrap(%RuntimeError{message: "boom"}, reason: :lookup_failed)
 iex> error.reason
 :lookup_failed
 iex> Errata.cause(error)
@@ -53,9 +54,10 @@ rewrapping would discard a classification that is already correct; reach for
 
 The cause can be any term — another Errata error, a standard exception, or a
 plain value such as the `reason` from an `{:error, reason}` tuple. Retrieve the
-immediate cause with `Errata.cause/1`, or follow a chain of wrapped errors to
-the bottom with `Errata.root_cause/1`. The cause is also included when the error
-is serialized with `to_map/1` or encoded as JSON.
+immediate cause with `Errata.cause/1`, or the deepest Errata error in a chain of
+wrapped errors with `Errata.root_error/1` — more on both under
+[Unwrapping a wrapped error](#unwrapping-a-wrapped-error) below. The cause is
+also included when the error is serialized with `to_map/1` or encoded as JSON.
 
 For logging, `Errata.format_chain/1` renders an error together with its full
 chain of causes:
@@ -70,7 +72,10 @@ Caused by: ** (RuntimeError) the database connection dropped
 
 Wrapping is worth doing because the outer error names *what your code was trying
 to do*. That is exactly why the outer message is often the least useful thing to
-show someone:
+show someone. (`Errata.display_message/1` below is the user-facing rendering of
+an error — its `:message` alone, where `Exception.message/1` appends the
+`:reason` for developers; see
+[Rendering an error for users](boundaries.md#rendering-an-error-for-users).)
 
 ```elixir
 iex> require Errata
@@ -99,8 +104,10 @@ iex> Errata.root_error(error) |> Errata.cause()
 
 `Errata.root_error/1` walks to the deepest **error**, however many layers down it
 is, and always returns one — an error with no cause is its own root. So what
-comes back always has a `code`, a `context`, a classification and a
-`display_message/1`, and there is no fallback to write at the call site.
+comes back always has a `context`, a `display_message/1`, and the things a
+boundary reads — a `code`, an HTTP status, a severity, a retryability flag, all
+covered in [Errors at a boundary](boundaries.md) — and there is no fallback to
+write at the call site.
 
 `Errata.cause/1` on that error gives the foreign original, or `nil` when the chain
 is Errata errors the whole way:
