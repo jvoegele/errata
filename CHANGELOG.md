@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Errata no longer defines `Jason.Encoder` and `JSON.Encoder` implementations for `Tuple`.** A
+  protocol implementation is global to the application that compiles it, so a library installing
+  one for a built-in type collides with an application that has its own: the compiler reports
+  `redefining module Jason.Encoder.Tuple`, and a build using `--warnings-as-errors` fails. A tuple
+  in a context or cause still serializes as an array — `to_map/1` now converts tuples to lists
+  itself, recursively through lists and plain maps — so the JSON shape is unchanged. What changes is
+  `to_map/1`: a tuple in the context or cause comes back as a list rather than a tuple, matching
+  what the JSON encoding already produced.
+- **A struct in a context is checked for encodability through its own encoder, not field by
+  field.** `%DateTime{}` and `%NaiveDateTime{}` carry a tuple in `:microsecond`, so once tuples had
+  no global encoder the field-wise check would have `inspect`ed them; and a struct with no encoder
+  at all passed the field-wise check and then raised at encode time. Both now go through the
+  backend: a struct it can encode is kept, and one it cannot is `inspect`ed.
+
 ## [1.9.1] - 2026-09-22
 
 ### Added

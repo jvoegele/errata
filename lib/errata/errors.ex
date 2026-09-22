@@ -486,8 +486,9 @@ defmodule Errata.Errors do
 
   # Render the wrapped cause for serialization. Errata errors recurse into their
   # full structured map; standard exceptions are rendered by type and message;
-  # any other term is kept if JSON-encodable and otherwise `inspect`'d. The
-  # cause's stacktrace is intentionally omitted, mirroring `Errata.Env.to_map/1`.
+  # any other term is kept if JSON-encodable (with tuples converted to lists) and
+  # otherwise `inspect`'d. The cause's stacktrace is intentionally omitted,
+  # mirroring `Errata.Env.to_map/1`.
   defp do_cause_map(nil), do: nil
   defp do_cause_map(%Errata.Cause{value: value}), do: cause_value_map(value)
 
@@ -496,9 +497,7 @@ defmodule Errata.Errors do
   defp cause_value_map(%mod{} = value) when is_exception(value),
     do: %{error_type: inspect(mod), message: Exception.message(value)}
 
-  defp cause_value_map(value) do
-    if Errata.JSON.encodable?(value), do: value, else: inspect(value)
-  end
+  defp cause_value_map(value), do: Errata.JSON.sanitize(value)
 
   @doc false
   @spec format_message(Errata.Error.t()) :: String.t()
@@ -961,16 +960,10 @@ defmodule Errata.Errors do
   defp context_map(error) do
     # Redact first, so a sensitive value is replaced before the JSON-encodability
     # pass can `inspect/1` it into a string and smuggle it through.
+    # Make sure that all of the data in the `context` map is JSON-encodable
     error
     |> redacted_context()
-    |> Enum.reduce(Map.new(), fn {key, value}, acc ->
-      # Make sure that all of the data in the `context` map is JSON-encodable
-      if Errata.JSON.encodable?(value) do
-        Map.put(acc, key, value)
-      else
-        Map.put(acc, key, inspect(value))
-      end
-    end)
+    |> Map.new(fn {key, value} -> {key, Errata.JSON.sanitize(value)} end)
   end
 
   @doc """

@@ -7,11 +7,47 @@ defmodule Errata.JSON do
   # at error-creation time (values that cannot be encoded are `inspect`'d), so it
   # only needs *a* working backend — it prefers the built-in one and falls back
   # to Jason.
+  #
+  # Errata deliberately defines no `Jason.Encoder` or `JSON.Encoder`
+  # implementation for `Tuple`, or for any other built-in type. A protocol
+  # implementation is global to the application that compiles it, so a library
+  # installing one collides with an application that has its own: the compiler
+  # reports "redefining module Jason.Encoder.Tuple", and a build using
+  # `--warnings-as-errors` fails outright. Tuples are instead converted to lists
+  # by `sanitize/1`, inside the map Errata itself emits, which keeps the JSON
+  # shape the same without claiming the type for the whole application.
 
   @native Code.ensure_loaded?(JSON)
-  @jason Code.ensure_loaded?(Jason)
 
-  def encodable?(map) when is_map(map) do
+  @doc """
+  Returns `value` in a form every JSON backend can encode.
+
+  Tuples become lists, recursively through lists and plain maps, so a tuple in an
+  error's context serializes as an array on either backend. A value that still
+  cannot be encoded is replaced by the `inspect/1` rendering of the *original*
+  value, so a tuple holding a pid reads as the tuple it was.
+  """
+  @spec sanitize(term()) :: term()
+  def sanitize(value) do
+    converted = tuples_to_lists(value)
+    if encodable?(converted), do: converted, else: inspect(value)
+  end
+
+  defp tuples_to_lists(tuple) when is_tuple(tuple),
+    do: tuple |> Tuple.to_list() |> tuples_to_lists()
+
+  defp tuples_to_lists([head | tail]), do: [tuples_to_lists(head) | tuples_to_lists(tail)]
+
+  defp tuples_to_lists(map) when is_map(map) and not is_struct(map),
+    do: Map.new(map, fn {key, value} -> {key, tuples_to_lists(value)} end)
+
+  defp tuples_to_lists(other), do: other
+
+  # A struct is checked through its own encoder by the backend clauses below, not
+  # field by field: `%DateTime{}` holds a tuple in `:microsecond` yet encodes as
+  # an ISO 8601 string, and a struct with no encoder at all would pass a
+  # field-wise check and then raise at encode time.
+  def encodable?(map) when is_map(map) and not is_struct(map) do
     Enum.all?(map, fn {k, v} ->
       (is_atom(k) or is_binary(k)) and encodable?(v)
     end)
@@ -26,7 +62,7 @@ defmodule Errata.JSON do
         Protocol.UndefinedError -> false
       end
 
-    @jason ->
+    Code.ensure_loaded?(Jason) ->
       def encodable?(value) do
         match?({:ok, _}, Jason.encode(value))
       end
@@ -35,28 +71,5 @@ defmodule Errata.JSON do
       # No JSON backend at all: sanitization is best-effort, so treat values as
       # encodable and leave them untouched.
       def encodable?(_value), do: true
-  end
-
-  # Tuples have no JSON representation in either backend by default; Errata
-  # encodes them as arrays so that tuple values in `context` serialize the same
-  # way regardless of which backend a caller uses.
-  if @jason do
-    defimpl Jason.Encoder, for: Tuple do
-      def encode(data, options) when is_tuple(data) do
-        data
-        |> Tuple.to_list()
-        |> Jason.Encoder.List.encode(options)
-      end
-    end
-  end
-
-  if @native do
-    defimpl JSON.Encoder, for: Tuple do
-      def encode(data, encoder) when is_tuple(data) do
-        data
-        |> Tuple.to_list()
-        |> JSON.protocol_encode(encoder)
-      end
-    end
   end
 end

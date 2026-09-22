@@ -219,6 +219,49 @@ defmodule Errata.ErrorTest do
     end
   end
 
+  # Errata used to install `Jason.Encoder` and `JSON.Encoder` implementations for
+  # `Tuple` so that a tuple in a context serialized as an array. A protocol
+  # implementation is global to the application that compiles it, so that
+  # collided with any application defining its own — a "redefining module"
+  # warning, and a failed build under `--warnings-as-errors`. The conversion now
+  # happens inside `to_map/1` instead.
+  describe "to_map/1 tuple handling" do
+    test "installs no encoder implementation for Tuple" do
+      refute Code.ensure_loaded?(Jason.Encoder.Tuple)
+      refute Code.ensure_loaded?(JSON.Encoder.Tuple)
+    end
+
+    test "converts tuples in the context to lists, recursively" do
+      context = %{pair: {:error, :timeout}, nested: %{list: [{1, 2}, {3, {4, 5}}]}}
+
+      assert TestError.to_map(TestError.new(context: context)).context == %{
+               pair: [:error, :timeout],
+               nested: %{list: [[1, 2], [3, [4, 5]]]}
+             }
+    end
+
+    test "converts a tuple cause to a list" do
+      error = TestError.new(cause: {:error, :timeout})
+      assert TestError.to_map(error).cause == [:error, :timeout]
+    end
+
+    test "inspects a tuple that is still not encodable, in its original form" do
+      pid = self()
+      error = TestError.new(context: %{owner: {:pid, pid}})
+      assert TestError.to_map(error).context.owner == inspect({:pid, pid})
+    end
+
+    test "keeps a struct the backend can encode, even one holding a tuple" do
+      at = ~U[2026-09-22 12:00:00.000000Z]
+      assert TestError.to_map(TestError.new(context: %{at: at})).context.at == at
+    end
+
+    test "inspects a struct the backend cannot encode" do
+      error = TestError.new(context: %{ref: %URI{host: "example.com"}})
+      assert TestError.to_map(error).context.ref == inspect(%URI{host: "example.com"})
+    end
+  end
+
   describe "to_map/1" do
     test "produces a JSON-compatible map" do
       error = TestError.create(context: %{foo: "bar"})
