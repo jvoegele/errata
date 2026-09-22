@@ -1,7 +1,7 @@
 defmodule Errata.MixProject do
   use Mix.Project
 
-  @version "1.9.2"
+  @version "1.9.3"
   @source_url "https://github.com/jvoegele/errata"
 
   def project do
