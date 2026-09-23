@@ -546,7 +546,7 @@ defmodule Errata.Errors do
     aggregate_def = define_aggregate_reflection(opts)
     source_root_def = define_source_root_reflection()
     attribute_defs = define_attributes(module_name)
-    type_def = define_type(kind)
+    type_def = define_type(kind, opts)
     reasons_def = define_reasons(reasons)
     http_status_def = define_http_status(kind, module_name, opts)
     code_def = define_code(module_name, opts)
@@ -1036,21 +1036,38 @@ defmodule Errata.Errors do
     end
   end
 
-  defp define_type(:general) do
-    quote do
-      @type t :: Errata.error()
-    end
-  end
+  # Generate the module's `t/0` as its own struct type rather than the kind-level
+  # `Errata.error()`, so that a spec written as `PaymentDeclined.t()` names that
+  # one type and Dialyzer can tell it from `OrderNotFound.t()`. See #65.
+  #
+  # Every field is spelled out with the same type the kind-level maps in `Errata`
+  # give it. That is what keeps `t/0` a subtype of `Errata.domain_error()` and
+  # friends, so a spec that accepts a kind still accepts every generated type;
+  # `test/support/typespec_guards.ex` holds Dialyzer to it. `reason` narrows to
+  # the declared `reason/0` where there is one, and `errors` appears only on
+  # aggregates, mirroring the struct itself.
+  defp define_type(kind, opts) do
+    reason_type =
+      if is_nil(Keyword.get(opts, :reasons)),
+        do: quote(do: atom() | nil),
+        else: quote(do: reason() | nil)
 
-  defp define_type(:domain) do
-    quote do
-      @type t :: Errata.domain_error()
-    end
-  end
+    aggregate_fields = if aggregate?(opts), do: [errors: quote(do: [Errata.error()])], else: []
 
-  defp define_type(:infrastructure) do
+    fields =
+      [
+        __exception__: true,
+        __errata_error__: true,
+        kind: kind,
+        message: quote(do: String.t() | nil),
+        reason: reason_type,
+        context: quote(do: map() | nil),
+        cause: quote(do: Errata.Cause.t() | nil),
+        env: quote(do: Errata.Env.t() | nil)
+      ] ++ aggregate_fields
+
     quote do
-      @type t :: Errata.infrastructure_error()
+      @type t :: %__MODULE__{unquote_splicing(fields)}
     end
   end
 
@@ -1090,8 +1107,33 @@ defmodule Errata.Errors do
 
   defp define_errata_error_callbacks do
     quote do
+      # The backing functions in `Errata.Errors` return the kind-level
+      # `Errata.error()`, so on their own the constructors would tell Dialyzer
+      # nothing about which type they build. `new/0,1` therefore carries a spec
+      # returning the module's `t/0`, and the `create` and `wrap` macros expand
+      # to calls of the two hidden functions below, whose specs say the same.
+      #
+      # A `%Module{} = ...` match in the expansion would pin the struct for
+      # Dialyzer too, but it makes Elixir's own type checker treat the result
+      # as static, and a field whose type the checker cannot infer precisely
+      # (`:env`, built from a stacktrace bound at the call site) then warns on
+      # access, for instance `error.env.file`. A call to a spec'd function stays
+      # dynamic for the checker and precise for Dialyzer.
       @impl Errata.Error
+      @spec new() :: t()
+      @spec new(Errata.Error.params()) :: t()
       def new(params \\ %{}), do: Errata.Errors.create(@__errata_error_module__, params)
+
+      @doc false
+      @spec __errata_create__(Errata.Error.params(), Macro.Env.t(), Exception.stacktrace()) :: t()
+      def __errata_create__(params, env, stacktrace),
+        do: Errata.Errors.create(@__errata_error_module__, params, env, stacktrace)
+
+      @doc false
+      @spec __errata_wrap__(term(), Errata.Error.params(), Macro.Env.t(), Exception.stacktrace()) ::
+              t()
+      def __errata_wrap__(cause, opts, env, stacktrace),
+        do: Errata.Errors.wrap(@__errata_error_module__, cause, opts, env, stacktrace)
 
       @impl Errata.Error
       defmacro create do
@@ -1101,7 +1143,7 @@ defmodule Errata.Errors do
           {:current_stacktrace, [_process_info_call | stacktrace]} =
             Process.info(self(), :current_stacktrace)
 
-          Errata.Errors.create(unquote(__module__), %{}, __ENV__, stacktrace)
+          unquote(__module__).__errata_create__(%{}, __ENV__, stacktrace)
         end
       end
 
@@ -1113,7 +1155,7 @@ defmodule Errata.Errors do
           {:current_stacktrace, [_process_info_call | stacktrace]} =
             Process.info(self(), :current_stacktrace)
 
-          Errata.Errors.create(unquote(__module__), unquote(params), __ENV__, stacktrace)
+          unquote(__module__).__errata_create__(unquote(params), __ENV__, stacktrace)
         end
       end
 
@@ -1125,7 +1167,7 @@ defmodule Errata.Errors do
           {:current_stacktrace, [_process_info_call | stacktrace]} =
             Process.info(self(), :current_stacktrace)
 
-          Errata.Errors.wrap(unquote(__module__), unquote(cause), [], __ENV__, stacktrace)
+          unquote(__module__).__errata_wrap__(unquote(cause), [], __ENV__, stacktrace)
         end
       end
 
@@ -1137,13 +1179,7 @@ defmodule Errata.Errors do
           {:current_stacktrace, [_process_info_call | stacktrace]} =
             Process.info(self(), :current_stacktrace)
 
-          Errata.Errors.wrap(
-            unquote(__module__),
-            unquote(cause),
-            unquote(opts),
-            __ENV__,
-            stacktrace
-          )
+          unquote(__module__).__errata_wrap__(unquote(cause), unquote(opts), __ENV__, stacktrace)
         end
       end
 

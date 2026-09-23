@@ -237,9 +237,10 @@ a real `reason/0` type enumerating the valid values —
 ```
 
 — so the set is part of the type's documented contract and Dialyzer can check specs
-written against it. And it makes the type safe to decode at a boundary: `Errata.from_map/3`
-matches an incoming reason against the declared set, so nothing from the wire reaches
-`String.to_existing_atom/1` at all. That last one is the strongest argument for declaring
+written against it, just as it checks specs written against the module's `t/0`,
+which names that module's struct and no other. And it makes the type safe to decode
+at a boundary: `Errata.from_map/3` matches an incoming reason against the declared
+set, so nothing from the wire reaches `String.to_existing_atom/1` at all. That last one is the strongest argument for declaring
 them; see [Errors at a boundary](boundaries.md#what-a-decoded-error-is-and-is-not).
 
 **The reason check itself is at runtime.** An invalid reason written as a literal in

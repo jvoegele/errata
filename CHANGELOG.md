@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-09-23
+
+### Changed
+- **The generated `t/0` names the error's own struct** instead of the kind-level `Errata.error()`,
+  `Errata.domain_error()` or `Errata.infrastructure_error()`, so `@spec refund(PaymentDeclined.t())`
+  means that one type and Dialyzer tells it apart from `OrderNotFound.t()` (#65). The type spells
+  out every field with the same types the kind-level maps use, so it remains a subtype of them and
+  a spec written against a kind still accepts every generated type. `reason` narrows to the declared
+  `reason/0` where there is one, and an aggregate type adds `errors`.
+- **The constructors are typed to match.** The generated `new/0,1` carry a spec returning `t/0`, and
+  the `create` and `wrap` macros (per-module, and `Errata.create/2` / `Errata.wrap/3` with a literal
+  module) expand to calls of two generated, undocumented functions whose specs return `t/0` as well,
+  so Dialyzer sees `OrderNotFound.create()` as an `OrderNotFound.t()` and flags it where a
+  `PaymentDeclined.t()` was specced. With the module in a variable, `Errata.create/2` and
+  `Errata.wrap/3` stay kind-level. The expansion is an ordinary remote call, so `alias` remains
+  enough for those two and no compile-time dependency is added.
+- **Nothing changes at runtime.** New Dialyzer warnings can appear only where a spec already named a
+  different error type than the code builds. Passing a kind-level value, such as a rescued error or
+  the result of `Errata.to_error/2`, to a spec naming one type does not warn. Elixir's own type
+  checker ignores specs, so compiler warnings are unaffected.
+- The CI Dialyzer job runs in the test environment so that `test/support/typespec_guards.ex`, which
+  holds the subtype property in specs, is analysed.
+
 ## [1.9.3] - 2026-09-22
 
 ### Changed

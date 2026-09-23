@@ -81,6 +81,10 @@ where the error is built (the check is at runtime; only a `:default_reason` outs
 compile error), generates a `reason/0` type, and is what makes decoding an error from the wire
 safe — a declared set turns decoding into a lookup, so nothing from outside is ever atomised.
 
+Every type also gets a `t/0` naming its own struct. Spec against `PaymentDeclined.t()` to mean that
+one type and Dialyzer holds callers to it; `Errata.error()`, `Errata.domain_error()` and
+`Errata.infrastructure_error()` are the types for any error of a kind.
+
 ## Creating errors
 
 Three ways, differing in setup and in whether they record where the error came from.

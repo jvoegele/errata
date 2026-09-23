@@ -96,8 +96,10 @@ jobs:
   dialyzer:
     name: Dialyzer
     runs-on: ubuntu-latest
+    # The test environment, so that `test/support` is analysed too: it holds the
+    # specs that pin the generated `t/0` as a subtype of the kind-level types.
     env:
-      MIX_ENV: dev
+      MIX_ENV: test
     steps:
       - uses: actions/checkout@v6
 

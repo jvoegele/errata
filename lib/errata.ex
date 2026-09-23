@@ -190,11 +190,38 @@ defmodule Errata do
       require MyApp.Orders.PaymentDeclined, as: PaymentDeclined
   """
   defmacro create(error_module, params \\ Macro.escape(%{})) do
+    build =
+      case literal_module(error_module, __CALLER__) do
+        nil ->
+          quote do
+            Errata.Errors.create(unquote(error_module), unquote(params), __ENV__, stacktrace)
+          end
+
+        module ->
+          quote do
+            unquote(module).__errata_create__(unquote(params), __ENV__, stacktrace)
+          end
+      end
+
     quote do
       {:current_stacktrace, [_process_info_call | stacktrace]} =
         Process.info(self(), :current_stacktrace)
 
-      Errata.Errors.create(unquote(error_module), unquote(params), __ENV__, stacktrace)
+      unquote(build)
+    end
+  end
+
+  # When the error module is a literal at the call site, `create/2` and `wrap/3`
+  # expand to that module's generated `__errata_create__/3` or `__errata_wrap__/4`,
+  # whose specs return the module's own `t/0`, so Dialyzer sees the specific type
+  # rather than the kind-level `Errata.error()` that `Errata.Errors` returns. The
+  # call is an ordinary remote call, so `alias` remains enough and the caller
+  # gains only a runtime dependency. A module held in a variable is unknown until
+  # runtime and goes through `Errata.Errors` as before.
+  defp literal_module(error_module, caller) do
+    case Macro.expand(error_module, caller) do
+      module when is_atom(module) -> module
+      _ -> nil
     end
   end
 
@@ -238,17 +265,30 @@ defmodule Errata do
   replace that error's status and user-facing message with the wrapper's.
   """
   defmacro wrap(error_module, cause, opts \\ []) do
+    build =
+      case literal_module(error_module, __CALLER__) do
+        nil ->
+          quote do
+            Errata.Errors.wrap(
+              unquote(error_module),
+              unquote(cause),
+              unquote(opts),
+              __ENV__,
+              stacktrace
+            )
+          end
+
+        module ->
+          quote do
+            unquote(module).__errata_wrap__(unquote(cause), unquote(opts), __ENV__, stacktrace)
+          end
+      end
+
     quote do
       {:current_stacktrace, [_process_info_call | stacktrace]} =
         Process.info(self(), :current_stacktrace)
 
-      Errata.Errors.wrap(
-        unquote(error_module),
-        unquote(cause),
-        unquote(opts),
-        __ENV__,
-        stacktrace
-      )
+      unquote(build)
     end
   end
 

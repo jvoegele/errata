@@ -164,23 +164,30 @@ defmodule Errata.Error do
 
   ## The generated `t/0` type
 
-  Every generated error type gets a `t/0` type, but it is the **kind-level** type
-  rather than one naming the struct:
+  Every generated error type gets a `t/0` type naming its own struct, so a spec
+  written against it means what a reader expects:
 
-      @type t() :: Errata.domain_error()
+      @spec refund(Order.t(), PaymentDeclined.t()) :: :ok
 
-  So every domain error type has a literally identical `t/0`, and a spec written as
-  `@spec refund(Order.t(), PaymentDeclined.t()) :: :ok` accepts *any* domain error.
-  To write a spec that names one error type, use the struct form instead:
+  accepts a `PaymentDeclined` and nothing else. The type spells out every field
+  with the same types the kind-level `t:Errata.error/0`,
+  `t:Errata.domain_error/0` and `t:Errata.infrastructure_error/0` maps use, so it
+  is a subtype of each of them: a spec that accepts a kind still accepts every
+  generated type. Where a type declares `:reasons`, its `reason` field narrows to
+  the generated `reason/0` enumeration, and an aggregate type adds
+  `errors: [Errata.error()]`.
 
-      @spec refund(Order.t(), %PaymentDeclined{}) :: :ok
+  The constructors are typed to match. The generated `new/1` carries a spec
+  returning `t/0`, and the `create` and `wrap` macros, both the per-module ones
+  and `Errata.create/2` / `Errata.wrap/3` with a literal module, expand to calls
+  of generated functions whose specs return `t/0` as well. Dialyzer therefore
+  sees `OrderNotFound.create()` as an `OrderNotFound.t()` rather than as some
+  Errata error, and flags it where a `PaymentDeclined.t()` was specced. The one
+  gap is `Errata.create/2` or `Errata.wrap/3` with the module in a variable,
+  which cannot be known at compile time and stays kind-level.
 
-  This is the opposite of the usual Elixir convention, where `t/0` means "this
-  module's type", so it is worth knowing which of the two you are reaching for.
-
-  The `reason/0` type generated from `:reasons` *is* specific — it enumerates the
-  declared values — so a spec written against `PaymentDeclined.reason()` gets real
-  checking.
+  Only Dialyzer reads these specs. Elixir's own type checker ignores them, so
+  none of this changes what the compiler warns about.
 
   ## Dialyzer's `:extra_return` flag
 
@@ -205,6 +212,10 @@ defmodule Errata.Error do
 
   Error structs are `Exception` structs that have additional fields to contain extra contextual
   information, such as an error reason or details about the context in which the error occurred.
+
+  This is the kind-level type covering every Errata error, the one the behaviour's callbacks are
+  written against. Each generated error module also has its own `t/0`, which names that module's
+  struct and is a subtype of this one; see "The generated `t/0` type" above.
   """
   @type t() :: Errata.error()
 
