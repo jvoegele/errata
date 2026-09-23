@@ -134,6 +134,28 @@ Errata.to_map(error).context
 #=> %{params: %{"email" => "kim@example.com", "password" => "[REDACTED]"}}
 ```
 
+A `{key, value}` pair counts as a key too, so the captured headers are covered
+whether they are a map, a keyword list, or the `[{"authorization", "Bearer ..."}]`
+list a Plug `conn.req_headers` actually is. Declare `:authorization` and the
+bearer token is replaced while the harmless headers stay:
+
+```elixir
+defmodule MyApp.Auth.TokenRejected do
+  use Errata.DomainError, redact: [:authorization]
+end
+
+error =
+  MyApp.Auth.TokenRejected.new(
+    context: %{headers: [{"authorization", "Bearer abc"}, {"accept", "*/*"}]}
+  )
+
+Errata.to_map(error).context
+#=> %{headers: [["authorization", "[REDACTED]"], ["accept", "*/*"]]}
+```
+
+(The pairs come out as two-element lists because `to_map/1` emits JSON-safe
+data, and JSON has no tuples.)
+
 It applies at the **serialization seam**, not at creation, so the error struct
 you are holding still has the real values for local debugging — only the copies
 Errata emits are redacted. That includes the `:error` struct in telemetry

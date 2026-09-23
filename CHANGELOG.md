@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Redaction now covers `{key, value}` pairs in lists** — keyword lists and Plug header lists
+  (#90). `Errata.Redaction.redact/2` only matched keys of maps; a pair inside a list was recursed
+  element by element, so the key was never compared and the value passed through. Declaring
+  `:authorization` therefore did nothing for `context: %{headers: conn.req_headers}`, which is
+  `[{"authorization", "Bearer ..."}, ...]`, and the workaround was to redact `:headers` wholesale.
+  A two-tuple whose first element is an atom or a binary is now treated as a pair wherever it
+  appears: a matching key has its value replaced, and any other key is recursed into as before.
+  Tuples with no key-like first element, such as `{1, 2}`, are unchanged. Nothing that was
+  redacted before is redacted differently; only values under an already-declared key are newly
+  covered.
+
 ## [1.10.0] - 2026-09-23
 
 ### Changed

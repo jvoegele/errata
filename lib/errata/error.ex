@@ -97,7 +97,9 @@ defmodule Errata.Error do
       `"[REDACTED]"` everywhere Errata serializes the context: `c:to_map/1` and the JSON
       encoding, `Errata.log/2` metadata, and `Errata.report/2` telemetry metadata. Redaction
       is recursive and matches atom and binary keys alike, so `redact: [:password]` covers a
-      password nested inside a captured params map with string keys. The error struct keeps
+      password nested inside a captured params map with string keys, and `{key, value}` pairs
+      count, so `redact: [:authorization]` covers the header in a captured `conn.req_headers`
+      list. The error struct keeps
       the real values, so they remain available locally for debugging. Defaults to `[]`; add a
       global floor with `config :errata, redact: [...]`. The generated `redact_context/1` is
       overridable for rules a key list can't express. See `Errata.Redaction`.

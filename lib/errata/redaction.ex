@@ -43,6 +43,13 @@ defmodule Errata.Redaction do
   declaring `:password` also covers the `"password"` string key that arrives from
   a JSON body or a Plug params map.
 
+  A `{key, value}` two-tuple whose key is an atom or a binary is treated as a
+  pair, so keyword lists and Plug header lists are covered too: declaring
+  `:authorization` redacts the value in `[authorization: "Bearer ..."]` and in
+  `conn.req_headers`, which is `[{"authorization", "Bearer ..."}, ...]`. A
+  two-tuple whose first element is anything else, such as `{1, 2}`, is an
+  ordinary tuple and is recursed element by element.
+
   Structs in the context are traversed as well, and come back as structs of the
   same type — a redacted `%MyApp.User{}` is still a `%MyApp.User{}`, with its
   sensitive fields replaced.
@@ -77,7 +84,9 @@ defmodule Errata.Redaction do
 
   Recurses through maps, structs, lists, and tuples. A key matches whether it is
   written as an atom or as a binary, so `redact(term, [:password])` also redacts
-  a `"password"` key.
+  a `"password"` key. A `{key, value}` two-tuple with an atom or binary key is a
+  pair, so a matching key inside a keyword list or a header list is redacted
+  as well.
 
   Returns `term` unchanged when `keys` is empty.
 
@@ -88,6 +97,9 @@ defmodule Errata.Redaction do
 
       iex> Errata.Redaction.redact(%{params: %{"token" => "abc"}}, [:token])
       %{params: %{"token" => "[REDACTED]"}}
+
+      iex> Errata.Redaction.redact(%{headers: [{"authorization", "Bearer x"}, {"accept", "*/*"}]}, [:authorization])
+      %{headers: [{"authorization", "[REDACTED]"}, {"accept", "*/*"}]}
 
       iex> Errata.Redaction.redact(%{user: "kim"}, [])
       %{user: "kim"}
@@ -121,6 +133,19 @@ defmodule Errata.Redaction do
 
   defp redact_term(list, keys) when is_list(list) do
     Enum.map(list, &redact_term(&1, keys))
+  end
+
+  # A `{key, value}` pair, which is what a keyword list or a Plug header list is
+  # made of. Recursing into it element by element would treat the key as a leaf
+  # and never match it, which is how `headers: conn.req_headers` leaked an
+  # Authorization header (#90). A tuple like `{1, 2}` has no key-like first
+  # element and falls through to the ordinary tuple clause below.
+  defp redact_term({key, value}, keys) when is_atom(key) or is_binary(key) do
+    if MapSet.member?(keys, normalize_key(key)) do
+      {key, @redacted}
+    else
+      {key, redact_term(value, keys)}
+    end
   end
 
   defp redact_term(tuple, keys) when is_tuple(tuple) do
