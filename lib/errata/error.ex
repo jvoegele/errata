@@ -137,7 +137,8 @@ defmodule Errata.Error do
 
   The generated `c:create/1` does the same thing and reads more directly when a module works mostly
   with one error type, at the cost of a `require` for that module, since the callback is implemented
-  as a macro:
+  as a macro. `require` with `:as` requires and aliases in one line; a module that already aliases
+  the type needs only a `require UnexpectedError` added next to the `alias`:
 
       defmodule MyApp.SomeModule do
         require MyApp.UnexpectedError, as: UnexpectedError

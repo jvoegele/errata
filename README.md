@@ -237,7 +237,8 @@ end
 
 **`create/1` on the error module** does exactly the same thing, and reads a
 little more directly when a module works mostly with one error type. It is a
-macro on the error module, so that module must be `require`d:
+macro on the error module, so that module must be `require`d. `require` with
+`:as` does that and aliases the module in one line:
 
 ```elixir
 iex> require MyApp.Orders.OrderNotFound, as: OrderNotFound
@@ -248,6 +249,14 @@ iex> error.context == %{order_id: 42}
 true
 iex> match?(%Errata.Env{stacktrace: stacktrace} when is_list(stacktrace), error.env)
 true
+```
+
+A module that already aliases its error types, for pattern matching on
+`%OrderNotFound{}` say, needs only the `require` added alongside:
+
+```elixir
+alias MyApp.Orders.OrderNotFound
+require OrderNotFound
 ```
 
 **`new/1` is a plain function** that builds the error without environment info:
