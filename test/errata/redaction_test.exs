@@ -96,6 +96,44 @@ defmodule ErrataRedactionTest do
                }
     end
 
+    test "treats {key, value} pairs in a keyword list as keys (#90)" do
+      context = %{opts: [authorization: "Bearer abc", timeout: 5_000]}
+
+      assert Redaction.redact(context, [:authorization]) ==
+               %{opts: [authorization: "[REDACTED]", timeout: 5_000]}
+    end
+
+    test "treats binary-keyed pairs as keys, the shape of Plug's req_headers (#90)" do
+      context = %{headers: [{"authorization", "Bearer abc"}, {"accept", "*/*"}]}
+
+      assert Redaction.redact(context, [:authorization]) ==
+               %{headers: [{"authorization", "[REDACTED]"}, {"accept", "*/*"}]}
+    end
+
+    test "treats a bare pair as a key too" do
+      assert Redaction.redact(%{auth: {"authorization", "Bearer abc"}}, [:authorization]) ==
+               %{auth: {"authorization", "[REDACTED]"}}
+    end
+
+    test "recurses into the value of a pair whose key does not match" do
+      context = %{result: {:ok, %{password: "hunter2"}}, opts: [user: %{token: "t"}]}
+
+      assert Redaction.redact(context, [:password, :token]) ==
+               %{result: {:ok, %{password: "[REDACTED]"}}, opts: [user: %{token: "[REDACTED]"}]}
+    end
+
+    test "leaves two-tuples with no key-like first element alone" do
+      context = %{points: [{1, 2}, {3, 4}], range: {1.0, "password"}}
+      assert Redaction.redact(context, [:password]) == context
+    end
+
+    test "redacts pairs nested inside a struct field" do
+      context = %{user: %User{email: "kim@example.com", password: [secret: "s"]}}
+      redacted = Redaction.redact(context, [:secret])
+
+      assert %User{email: "kim@example.com", password: [secret: "[REDACTED]"]} = redacted.user
+    end
+
     test "redacts struct fields and returns a struct of the same type" do
       context = %{user: %User{email: "kim@example.com", password: "hunter2"}}
       redacted = Redaction.redact(context, [:password])
@@ -136,6 +174,23 @@ defmodule ErrataRedactionTest do
                token: "[REDACTED]",
                user: "kim"
              }
+    end
+
+    test "a header list in the context reaches to_map/1 and JSON redacted (#90)" do
+      error =
+        CustomRules.new(
+          context: %{headers: [{"authorization", "Bearer abc"}, {"accept", "*/*"}], id: 7}
+        )
+
+      # Tuples become lists on the way out, since the map is JSON-safe.
+      assert CustomRules.to_map(error).context == %{
+               headers: [["authorization", "[REDACTED]"], ["accept", "*/*"]],
+               id: 7
+             }
+
+      json = Jason.encode!(error)
+      assert json =~ "[REDACTED]"
+      refute json =~ "Bearer abc"
     end
 
     test "JSON encoding is redacted" do
