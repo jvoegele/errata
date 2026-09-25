@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-09-25
+
+### Added
+- **`:capture_stacktrace` option** to turn off, or shorten, the stacktrace that `create` and `wrap`
+  record in `env.stacktrace`. `use Errata.DomainError, capture_stacktrace: false` skips the capture
+  and leaves `env.stacktrace` as `nil`; `capture_stacktrace: 3` keeps the three innermost frames;
+  `true`, the default, keeps them all, as before. `config :errata, capture_stacktrace: ...` sets
+  the default for every type that declares nothing, and is read at runtime. The rest of `:env` is
+  recorded either way, and a cause's `:stacktrace` given to `wrap` is not affected.
+
 ## [1.10.1] - 2026-09-23
 
 ### Fixed

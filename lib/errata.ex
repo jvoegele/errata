@@ -190,24 +190,19 @@ defmodule Errata do
       require MyApp.Orders.PaymentDeclined, as: PaymentDeclined
   """
   defmacro create(error_module, params \\ Macro.escape(%{})) do
-    build =
-      case literal_module(error_module, __CALLER__) do
-        nil ->
-          quote do
-            Errata.Errors.create(unquote(error_module), unquote(params), __ENV__, stacktrace)
-          end
+    case literal_module(error_module, __CALLER__) do
+      nil ->
+        quote do
+          error_module = unquote(error_module)
+          stacktrace = unquote(Errata.Errors.capture_stacktrace_ast(quote(do: error_module)))
+          Errata.Errors.create(error_module, unquote(params), __ENV__, stacktrace)
+        end
 
-        module ->
-          quote do
-            unquote(module).__errata_create__(unquote(params), __ENV__, stacktrace)
-          end
-      end
-
-    quote do
-      {:current_stacktrace, [_process_info_call | stacktrace]} =
-        Process.info(self(), :current_stacktrace)
-
-      unquote(build)
+      module ->
+        quote do
+          stacktrace = unquote(Errata.Errors.capture_stacktrace_ast(module))
+          unquote(module).__errata_create__(unquote(params), __ENV__, stacktrace)
+        end
     end
   end
 
@@ -265,30 +260,19 @@ defmodule Errata do
   replace that error's status and user-facing message with the wrapper's.
   """
   defmacro wrap(error_module, cause, opts \\ []) do
-    build =
-      case literal_module(error_module, __CALLER__) do
-        nil ->
-          quote do
-            Errata.Errors.wrap(
-              unquote(error_module),
-              unquote(cause),
-              unquote(opts),
-              __ENV__,
-              stacktrace
-            )
-          end
+    case literal_module(error_module, __CALLER__) do
+      nil ->
+        quote do
+          error_module = unquote(error_module)
+          stacktrace = unquote(Errata.Errors.capture_stacktrace_ast(quote(do: error_module)))
+          Errata.Errors.wrap(error_module, unquote(cause), unquote(opts), __ENV__, stacktrace)
+        end
 
-        module ->
-          quote do
-            unquote(module).__errata_wrap__(unquote(cause), unquote(opts), __ENV__, stacktrace)
-          end
-      end
-
-    quote do
-      {:current_stacktrace, [_process_info_call | stacktrace]} =
-        Process.info(self(), :current_stacktrace)
-
-      unquote(build)
+      module ->
+        quote do
+          stacktrace = unquote(Errata.Errors.capture_stacktrace_ast(module))
+          unquote(module).__errata_wrap__(unquote(cause), unquote(opts), __ENV__, stacktrace)
+        end
     end
   end
 

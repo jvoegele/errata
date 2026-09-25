@@ -25,7 +25,8 @@ defmodule Errata.Errors do
     :severity,
     :retryable,
     :redact,
-    :aggregate
+    :aggregate,
+    :capture_stacktrace
   ]
 
   # The closed set of error kinds. Closed deliberately: `Errata.is_error/1` and
@@ -69,8 +70,66 @@ defmodule Errata.Errors do
       |> validate_reason!()
       |> validate_errors!()
 
-    %{error | env: Errata.Env.new(env, stacktrace)}
+    %{error | env: new_env(env, stacktrace)}
   end
+
+  # `Errata.Env.new/2` treats a `nil` stacktrace as "capture one now", which is
+  # the opposite of what a `nil` from a disabled `:capture_stacktrace` means.
+  defp new_env(env, nil), do: %{Errata.Env.new(env, []) | stacktrace: nil}
+  defp new_env(env, stacktrace), do: Errata.Env.new(env, stacktrace)
+
+  @doc false
+  # Returns the AST that captures the stacktrace for an error of `error_type`,
+  # honouring its `:capture_stacktrace` setting. Every `create` and `wrap` macro
+  # expands to this. `Process.info/2` has to run inline at the call site rather
+  # than in a helper function: a helper would add its own frame and, with the VM
+  # capping the trace at 8 frames, push a real one off the end.
+  @spec capture_stacktrace_ast(Macro.t()) :: Macro.t()
+  def capture_stacktrace_ast(error_type) do
+    quote do
+      case Errata.Errors.stacktrace_setting(unquote(error_type)) do
+        false ->
+          nil
+
+        setting ->
+          {:current_stacktrace, [_process_info_call | stacktrace]} =
+            Process.info(self(), :current_stacktrace)
+
+          Errata.Errors.limit_stacktrace(stacktrace, setting)
+      end
+    end
+  end
+
+  @doc false
+  # The effective `:capture_stacktrace` setting for `error_type`: the type's own
+  # option when it declares one, otherwise `config :errata, capture_stacktrace:`,
+  # otherwise `true`.
+  @spec stacktrace_setting(module() | struct()) :: boolean() | pos_integer()
+  def stacktrace_setting(%{__struct__: error_type}), do: stacktrace_setting(error_type)
+
+  def stacktrace_setting(error_type) do
+    case error_type.__errata_capture_stacktrace__() do
+      nil -> global_stacktrace_setting()
+      setting -> setting
+    end
+  end
+
+  defp global_stacktrace_setting do
+    case Application.get_env(:errata, :capture_stacktrace, true) do
+      setting when is_boolean(setting) or (is_integer(setting) and setting > 0) ->
+        setting
+
+      other ->
+        raise ArgumentError,
+              "config :errata, capture_stacktrace: must be a boolean or a positive integer, " <>
+                "got: #{inspect(other)}"
+    end
+  end
+
+  @doc false
+  @spec limit_stacktrace(Exception.stacktrace(), true | pos_integer()) :: Exception.stacktrace()
+  def limit_stacktrace(stacktrace, true), do: stacktrace
+  def limit_stacktrace(stacktrace, frames), do: Enum.take(stacktrace, frames)
 
   @doc false
   @spec wrap(module(), term(), Errata.Error.params(), Macro.Env.t(), Exception.stacktrace()) ::
@@ -544,6 +603,7 @@ defmodule Errata.Errors do
     validate_aggregate_opt!(module_name, opts)
 
     aggregate_def = define_aggregate_reflection(opts)
+    capture_stacktrace_def = define_capture_stacktrace_reflection(module_name, opts)
     source_root_def = define_source_root_reflection()
     attribute_defs = define_attributes(module_name)
     type_def = define_type(kind, opts)
@@ -561,6 +621,7 @@ defmodule Errata.Errors do
 
     quote do
       unquote(aggregate_def)
+      unquote(capture_stacktrace_def)
       unquote(source_root_def)
       unquote(attribute_defs)
       unquote(type_def)
@@ -1029,6 +1090,30 @@ defmodule Errata.Errors do
     end
   end
 
+  # `nil` means the type declares nothing and defers to the global setting,
+  # which is read at runtime so that it can differ between environments without
+  # recompiling the error types.
+  defp define_capture_stacktrace_reflection(module_name, opts) do
+    setting =
+      case Keyword.get(opts, :capture_stacktrace) do
+        setting when is_nil(setting) or is_boolean(setting) ->
+          setting
+
+        frames when is_integer(frames) and frames > 0 ->
+          frames
+
+        other ->
+          raise ArgumentError,
+                ":capture_stacktrace for #{inspect(module_name)} must be a boolean or a " <>
+                  "positive integer, got: #{inspect(other)}"
+      end
+
+    quote do
+      @doc false
+      def __errata_capture_stacktrace__, do: unquote(setting)
+    end
+  end
+
   defp define_attributes(module_name) do
     quote do
       @__errata_error_module__ unquote(module_name)
@@ -1140,8 +1225,7 @@ defmodule Errata.Errors do
         __module__ = @__errata_error_module__
 
         quote do
-          {:current_stacktrace, [_process_info_call | stacktrace]} =
-            Process.info(self(), :current_stacktrace)
+          stacktrace = unquote(Errata.Errors.capture_stacktrace_ast(__module__))
 
           unquote(__module__).__errata_create__(%{}, __ENV__, stacktrace)
         end
@@ -1152,8 +1236,7 @@ defmodule Errata.Errors do
         __module__ = @__errata_error_module__
 
         quote do
-          {:current_stacktrace, [_process_info_call | stacktrace]} =
-            Process.info(self(), :current_stacktrace)
+          stacktrace = unquote(Errata.Errors.capture_stacktrace_ast(__module__))
 
           unquote(__module__).__errata_create__(unquote(params), __ENV__, stacktrace)
         end
@@ -1164,8 +1247,7 @@ defmodule Errata.Errors do
         __module__ = @__errata_error_module__
 
         quote do
-          {:current_stacktrace, [_process_info_call | stacktrace]} =
-            Process.info(self(), :current_stacktrace)
+          stacktrace = unquote(Errata.Errors.capture_stacktrace_ast(__module__))
 
           unquote(__module__).__errata_wrap__(unquote(cause), [], __ENV__, stacktrace)
         end
@@ -1176,8 +1258,7 @@ defmodule Errata.Errors do
         __module__ = @__errata_error_module__
 
         quote do
-          {:current_stacktrace, [_process_info_call | stacktrace]} =
-            Process.info(self(), :current_stacktrace)
+          stacktrace = unquote(Errata.Errors.capture_stacktrace_ast(__module__))
 
           unquote(__module__).__errata_wrap__(unquote(cause), unquote(opts), __ENV__, stacktrace)
         end
