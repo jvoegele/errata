@@ -109,6 +109,19 @@ defmodule Errata.Error do
       in `c:to_map/1` and the message, and merges `severity/1`, `retryable?/1`, and
       `http_status/1` across them — each by a different rule, and each still overridable. Members
       must themselves be Errata errors. Defaults to `false`. See `Errata.Aggregate`.
+    * `:capture_stacktrace` - how much of the stacktrace `c:create/1`, `c:wrap/2`,
+      `Errata.create/2`, and `Errata.wrap/3` record in `env.stacktrace`: `true` (the default)
+      keeps every frame the VM captures, a positive integer keeps only that many of the innermost
+      frames, and `false` skips the capture entirely and leaves `env.stacktrace` as `nil`. The
+      rest of `:env` (module, function, file, line) is recorded either way. Useful for a type
+      created at high volume, or one whose origin says all there is to know. Set a global default
+      for every type that declares nothing with:
+
+          config :errata, capture_stacktrace: 5
+
+      This is read at runtime, so it can differ between environments without recompiling. It
+      governs only the error's own `:env`; the `:stacktrace` passed to `c:wrap/2` for the cause
+      is always kept as given.
     * `:kind` - the "kind" of Errata error to create, one of `:domain`, `:infrastructure`, or
       `:general` (which is the default). Accepted only here: `use Errata.DomainError` and
       `use Errata.InfrastructureError` set the kind themselves and reject the option.
@@ -282,7 +295,7 @@ defmodule Errata.Error do
   error — negligible against almost any operation that can fail, including in `with` chains at
   request volume. The stacktrace is already capped by the VM (8 frames by default), so the cost does
   not grow with stack depth. Reach for `c:new/1` only when you need a plain function, not to avoid
-  this cost.
+  this cost; to skip or shorten the stacktrace itself, use the `:capture_stacktrace` option.
   """
   @macrocallback create(params()) :: Macro.t()
 

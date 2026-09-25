@@ -13,7 +13,8 @@ defmodule Errata.Env do
       the second its arity; returns nil if not inside a function
     * `line` - the current line as an integer
     * `module` - the current module name
-    * `stacktrace` - the stacktrace for the current process at the time of creation
+    * `stacktrace` - the stacktrace for the current process at the time of creation; truncated,
+      or `nil`, according to the error type's `:capture_stacktrace` option (see `Errata.Error`)
   """
 
   @typedoc """
